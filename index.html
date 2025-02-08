@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>La Podrida – Juego de Cartas</title>
+  <style>
+    /* RESET BÁSICO */
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    /* Fondo de la pantalla: un verde más claro */
+    body {
+      background-color: #4e8d75;
+      font-family: sans-serif;
+      color: #fff;
+    }
+    /* Contenedor principal */
+    #game {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Botón "Nuevo Juego" en la esquina superior izquierda */
+    #new-game {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 10px 15px;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 10;
+    }
+    /* Tapete centrado, tamaño fijo, con fondo oscuro */
+    #trick-area {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #35654d;
+      border: 2px dashed #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      z-index: 1;
+    }
+    /* Caja de ayuda: su borde inferior queda 10px por encima del tapete */
+    #message {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(50% + 120px);
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 5px;
+      z-index: 10;
+      text-align: center;
+      max-height: calc(50% - 120px);
+      overflow-y: auto;
+    }
+    /* Marcador de ronda, en la esquina superior derecha */
+    #round-info {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.8);
+      color: black;
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 10;
+      text-align: center;
+    }
+    /* Áreas de los jugadores */
+    .player-area {
+      position: absolute;
+      text-align: center;
+    }
+    /* Posicionamiento de cada jugador */
+    #north {
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    #east {
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+    }
+    /* Área del jugador humano ("Tú"): los botones de apuesta aparecen POR ARRIBA del nombre */
+    #south {
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    /* Contenedor de apuestas en el área del jugador humano */
+    #bid-area {
+      margin-bottom: 10px;
+    }
+    #west {
+      top: 50%;
+      left: 20px;
+      transform: translateY(-50%);
+    }
+    /* ESTILO DE LAS CARTAS */
+    .card {
+      display: inline-block;
+      width: 60px;
+      height: 90px;
+      border: 1px solid #000;
+      border-radius: 5px;
+      background-color: #fff;
+      line-height: 90px;
+      font-size: 20px;
+      margin: 3px;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      text-align: center;
+    }
+    /* Reverso de la carta: fondo blanco con patrón geométrico azul */
+    .card.back {
+      background-color: #fff;
+      background-image: repeating-linear-gradient(45deg, #2196F3, #2196F3 5px, #fff 5px, #fff 10px);
+      color: transparent;
+    }
+    /* Resalta carta válida para jugar */
+    .card.valid {
+      box-shadow: 0 0 10px 3px yellow;
+    }
+    /* Las cartas jugadas en el tapete se posicionan con un margen de 10px para evitar superposición */
+    .played-card {
+      position: absolute;
+      width: 60px;
+      height: 90px;
+      border: 1px solid #000;
+      border-radius: 5px;
+      background-color: #fff;
+      text-align: center;
+      line-height: 90px;
+      font-size: 20px;
+      z-index: 5;
+    }
+    /* Botón para apostar */
+    .bid-button {
+      margin: 5px;
+      padding: 5px 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    /* Caja de estado para cada jugador */
+    .status-box {
+      background: rgba(255,255,255,0.8);
+      color: black;
+      border: 1px solid #000;
+      border-radius: 5px;
+      padding: 5px;
+      margin-top: 5px;
+      font-size: 14px;
+    }
+    /* Botón "Siguiente Ronda" / "Reiniciar Juego" */
+    #restart {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      padding: 10px 15px;
+      font-size: 16px;
+      cursor: pointer;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <!-- Botón "Nuevo Juego" -->
+    <button id="new-game">Nuevo Juego</button>
+    <!-- Marcador de ronda -->
+    <div id="round-info"></div>
+    <!-- Caja de ayuda -->
+    <div id="message"></div>
+    <!-- Tapete -->
+    <div id="trick-area"></div>
+    
+    <!-- Áreas de los jugadores -->
+    <div id="north" class="player-area">
+      <div id="player-0-name"></div>
+      <div id="player-0-status" class="status-box"></div>
+      <div id="player-0-hand"></div>
+    </div>
+    <div id="east" class="player-area">
+      <div id="player-1-name"></div>
+      <div id="player-1-status" class="status-box"></div>
+      <div id="player-1-hand"></div>
+    </div>
+    <!-- Área del jugador humano ("Tú"): los botones de apuesta aparecen POR ARRIBA del nombre -->
+    <div id="south" class="player-area">
+      <div id="bid-area"></div>
+      <div id="player-2-name"></div>
+      <div id="player-2-status" class="status-box"></div>
+      <div id="player-2-hand"></div>
+    </div>
+    <div id="west" class="player-area">
+      <div id="player-3-name"></div>
+      <div id="player-3-status" class="status-box"></div>
+      <div id="player-3-hand"></div>
+    </div>
+    <!-- Botón "Siguiente Ronda" / "Reiniciar Juego" -->
+    <button id="restart">Siguiente Ronda</button>
+  </div>
+
+  <script>
+    /* ====================
+       VARIABLES Y ESTADO
+       ==================== */
+    // Jugadores: 0: AI North, 1: AI East, 2: Humano (Tú), 3: AI West
+    let players = [
+      { id: 0, name: "AI North", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "north" },
+      { id: 1, name: "AI East", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "east" },
+      { id: 2, name: "Tú", type: "human", hand: [], bid: null, tricks: 0, score: 0, position: "south" },
+      { id: 3, name: "AI West", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "west" }
+    ];
+    
+    let deck = [];
+    let trump = null;      // Carta de triunfo
+    let trumpSuit = null;
+    let dealer = null;     // Índice del repartidor
+    let biddingOrder = []; // Orden de apuesta
+    let biddingIndex = 0;
+    let currentPhase = "bidding"; // "bidding", "playing" o "roundOver"
+    
+    // Estado de la baza actual: cada elemento es {playerId, card, element}
+    let currentTrick = [];
+    let trickLeader = null;
+    let currentPlayer = null;
+    
+    // Secuencia de rondas: 1, 2, 3, 4, luego 8 rondas de 5, y finalmente 4, 3, 2, 1.
+    const rounds = [1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 4, 3, 2, 1];
+    let currentRoundIndex = 0;
+    let handSize = rounds[currentRoundIndex];
+    
+    /* ====================
+       FUNCIONES AUXILIARES
+       ==================== */
+    
+    // Crea la baraja española de 48 cartas.
+    function createDeck() {
+      const suits = ["espadas", "oros", "copas", "bastos"];
+      const ranks = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "S", "C", "R"];
+      let deck = [];
+      for (let suit of suits) {
+        for (let rank of ranks) {
+          deck.push({ suit, rank });
+        }
+      }
+      return deck;
+    }
+    
+    // Mezcla un arreglo in-place.
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+    
+    // Devuelve un valor numérico para comparar rangos, si fuera necesario.
+    function getRankValue(rank) {
+      if (["S", "C", "R"].includes(rank)) {
+        if (rank === "S") return 10;
+        if (rank === "C") return 11;
+        if (rank === "R") return 12;
+      }
+      return parseInt(rank);
+    }
+    
+    // Devuelve la inicial del palo: E, O, C, B.
+    function getSuitSymbol(suit) {
+      switch (suit) {
+        case "espadas": return "E";
+        case "oros":    return "O";
+        case "copas":   return "C";
+        case "bastos":  return "B";
+        default: return "";
+      }
+    }
+    
+    // Crea el elemento visual para una carta.
+    // Si la carta es "principal" (1, 3, S, C o R) se muestra en negrita.
+    // Se asigna el color de fondo según el palo y el texto siempre en negro.
+    function createCardElement(card, faceUp = true) {
+      let el = document.createElement("div");
+      el.classList.add("card");
+      if (!faceUp) {
+        el.classList.add("back");
+        el.style.backgroundColor = "#fff";
+        el.style.backgroundImage = "repeating-linear-gradient(45deg, #2196F3, #2196F3 5px, #fff 5px, #fff 10px)";
+        el.textContent = "";
+      } else {
+        if (["1", "3", "S", "C", "R"].includes(card.rank)) {
+          el.innerHTML = "<strong>" + card.rank + "</strong>";
+        } else {
+          el.textContent = card.rank;
+        }
+        if (card.suit === "espadas") {
+          el.style.backgroundColor = "#ADD8E6";  // azul claro
+        } else if (card.suit === "oros") {
+          el.style.backgroundColor = "#FFFFE0";  // amarillo claro
+        } else if (card.suit === "copas") {
+          el.style.backgroundColor = "#FFB6C1";  // rojo claro
+        } else if (card.suit === "bastos") {
+          el.style.backgroundColor = "#90EE90";  // verde claro
+        }
+        el.style.color = "black";
+      }
+      return el;
+    }
+    
+    // Actualiza la visualización de las cartas en mano para cada jugador.
+    function updateHandsDisplay() {
+      for (let p of players) {
+        let handDiv = document.getElementById(`player-${p.id}-hand`);
+        handDiv.innerHTML = "";
+        for (let i = 0; i < p.hand.length; i++) {
+          let card = p.hand[i];
+          let cardEl;
+          if (p.type === "human") {
+            cardEl = createCardElement(card, true);
+            cardEl.dataset.index = i;
+            if (currentPhase === "playing" && p.id === currentPlayer && isLegalPlay(p, card)) {
+              cardEl.classList.add("valid");
+            }
+            if (p.id === currentPlayer && currentPhase === "playing") {
+              cardEl.addEventListener("click", onHumanCardClick);
+            }
+          } else {
+            // Los jugadores de IA verán sus cartas boca abajo
+            cardEl = createCardElement(card, false);
+          }
+          handDiv.appendChild(cardEl);
+        }
+      }
+    }
+    
+    // Actualiza los nombres y la información de estado de cada jugador.
+    function updatePlayerInfo() {
+      players.forEach(p => {
+        let nameDiv = document.getElementById(`player-${p.id}-name`);
+        nameDiv.textContent = p.name + (p.id === dealer ? " (Dealer)" : "");
+        let statusDiv = document.getElementById(`player-${p.id}-status`);
+        statusDiv.textContent = "Apuesta: " + (p.bid !== null ? p.bid : "-") +
+                                " | Bazas: " + p.tricks +
+                                " | Puntuación: " + p.score;
+      });
+    }
+    
+    // Actualiza el marcador de ronda y muestra la carta de triunfo.
+    function updateRoundInfo() {
+      let roundInfoDiv = document.getElementById("round-info");
+      roundInfoDiv.innerHTML = "";
+      let roundText = document.createElement("div");
+      roundText.textContent = "Ronda: " + (currentRoundIndex + 1) + " de " + rounds.length;
+      roundInfoDiv.appendChild(roundText);
+      let trumpText = document.createElement("div");
+      trumpText.textContent = "Palo de la ronda:";
+      roundInfoDiv.appendChild(trumpText);
+      let trumpCardEl = createCardElement(trump, true);
+      trumpCardEl.style.width = "40px";
+      trumpCardEl.style.height = "60px";
+      trumpCardEl.style.lineHeight = "60px";
+      trumpCardEl.style.fontSize = "16px";
+      roundInfoDiv.appendChild(trumpCardEl);
+    }
+    
+    // Muestra un mensaje en la caja de ayuda.
+    function showMessage(text) {
+      document.getElementById("message").textContent = text;
+    }
+    
+    // Limpia el contenedor de apuestas.
+    function clearBidArea() {
+      document.getElementById("bid-area").innerHTML = "";
+    }
+    
+    // Limpia el tapete.
+    function clearTrickArea() {
+      document.getElementById("trick-area").innerHTML = "";
+    }
+    
+    /* ====================
+       LÓGICA DEL JUEGO
+       ==================== */
+    
+    function startRound() {
+      currentPhase = "bidding";
+      currentTrick = [];
+      biddingIndex = 0;
+      handSize = rounds[currentRoundIndex];
+      players.forEach(p => {
+        p.hand = [];
+        p.bid = null;
+        p.tricks = 0;
+      });
+      clearTrickArea();
+      clearBidArea();
+      document.getElementById("restart").style.display = "none";
+      
+      deck = createDeck();
+      shuffle(deck);
+      // Reparte 'handSize' cartas a cada jugador
+      for (let i = 0; i < handSize; i++) {
+        for (let p of players) {
+          p.hand.push(deck.pop());
+        }
+      }
+      
+      // La carta de triunfo se saca del mazo y no se reparte.
+      trump = deck.pop();
+      trumpSuit = trump.suit;
+      
+      // Selecciona aleatoriamente el repartidor.
+      dealer = Math.floor(Math.random() * players.length);
+      
+      // Establece el orden de apuesta: comienza por el jugador a la izquierda del repartidor.
+      biddingOrder = [];
+      for (let i = 1; i <= players.length; i++) {
+        biddingOrder.push((dealer + i) % players.length);
+      }
+      
+      updatePlayerInfo();
+      updateHandsDisplay();
+      updateRoundInfo();
+      showMessage("Trump: " + getSuitSymbol(trumpSuit) + " (" + trumpSuit + ")");
+      setTimeout(processNextBid, 1000);
+    }
+    
+    function processNextBid() {
+      if (biddingIndex >= biddingOrder.length) {
+        currentPhase = "playing";
+        trickLeader = biddingOrder[0];
+        currentPlayer = trickLeader;
+        showMessage("Apuestas completas. " + players[currentPlayer].name + " lidera.");
+        updatePlayerInfo();
+        setTimeout(playTurn, 1000);
+        return;
+      }
+      let pid = biddingOrder[biddingIndex];
+      let p = players[pid];
+      if (p.type === "ai") {
+        let bid = aiComputeBid(pid);
+        p.bid = bid;
+        showMessage(p.name + " apuesta " + bid);
+        updatePlayerInfo();
+        biddingIndex++;
+        setTimeout(processNextBid, 1000);
+      } else {
+        // Se permiten todas las apuestas (la suma total puede ser igual al número de bazas)
+        showMessage("Tu turno para apostar. Elige un número entre 0 y " + handSize + ".");
+        displayBidOptions();
+      }
+    }
+    
+    // Permite al jugador humano elegir su apuesta (botones del 0 al handSize)
+    function displayBidOptions() {
+      clearBidArea();
+      let bidArea = document.getElementById("bid-area");
+      for (let i = 0; i <= handSize; i++) {
+        let btn = document.createElement("button");
+        btn.textContent = i;
+        btn.classList.add("bid-button");
+        btn.addEventListener("click", function() {
+          players[2].bid = i;
+          showMessage("Apuestas: " + i);
+          updatePlayerInfo();
+          clearBidArea();
+          biddingIndex++;
+          setTimeout(processNextBid, 500);
+        });
+        bidArea.appendChild(btn);
+      }
+    }
+    
+    // Heurística básica para la apuesta de la IA.
+    function aiComputeBid(pid) {
+      let p = players[pid];
+      let count = 0;
+      for (let card of p.hand) {
+        if (card.suit === trumpSuit && getRankValue(card.rank) >= 10) count++;
+      }
+      let bid = count + Math.floor(Math.random() * 2);
+      if (bid > handSize) bid = handSize;
+      return bid;
+    }
+    
+    // --- MODIFICACIÓN: Nueva regla de obligar a seguir palo y, en caso de faltar, a tirar triunfo ---
+    function isLegalPlay(player, card) {
+      // Si es la primera carta de la baza, cualquier jugada es válida.
+      if (currentTrick.length === 0) return true;
+      let ledSuit = currentTrick[0].card.suit;
+      // Comprueba si el jugador tiene cartas del palo que abrió la baza.
+      let hasLedSuit = player.hand.some(c => c.suit === ledSuit);
+      if (hasLedSuit) {
+        return card.suit === ledSuit;
+      } else {
+        // Si no tiene cartas del palo de apertura, verifica si tiene cartas de triunfo.
+        let hasTrump = player.hand.some(c => c.suit === trumpSuit);
+        if (hasTrump) {
+          return card.suit === trumpSuit;
+        } else {
+          // Si no tiene ni cartas del palo de apertura ni de triunfo, puede jugar cualquier carta.
+          return true;
+        }
+      }
+    }
+    // --- FIN DE MODIFICACIÓN ---
+    
+    function onHumanCardClick(event) {
+      let index = parseInt(event.currentTarget.dataset.index);
+      let card = players[2].hand[index];
+      if (!isLegalPlay(players[2], card)) {
+        showMessage("¡Debes seguir el palo o, si no lo tienes, tirar triunfo!");
+        return;
+      }
+      playCard(2, index);
+    }
+    
+    // Juega una carta y la posiciona en el tapete. Se utiliza un posicionamiento simétrico:
+    // North: top: 10px; left: 80px;
+    // South: bottom: 10px; left: 80px;
+    // East:  right: 10px; top: 65px;
+    // West:  left: 10px; top: 65px;
+    function playCard(playerId, cardIndex) {
+      let player = players[playerId];
+      let card = player.hand.splice(cardIndex, 1)[0];
+      let cardEl = createCardElement(card, true);
+      cardEl.classList.add("played-card");
+      let pos = "";
+      switch (player.position) {
+        case "north": pos = "top: 10px; left: 80px;"; break;
+        case "south": pos = "bottom: 10px; left: 80px;"; break;
+        case "east":  pos = "right: 10px; top: 65px;"; break;
+        case "west":  pos = "left: 10px; top: 65px;"; break;
+      }
+      cardEl.style.cssText += pos;
+      document.getElementById("trick-area").appendChild(cardEl);
+      currentTrick.push({ playerId, card, element: cardEl });
+      updateHandsDisplay();
+      
+      if (currentTrick.length === players.length) {
+        setTimeout(determineTrickWinner, 1000);
+      } else {
+        currentPlayer = (playerId + 1) % players.length;
+        while (players[currentPlayer].hand.length === 0) {
+          currentPlayer = (currentPlayer + 1) % players.length;
+        }
+        setTimeout(playTurn, 500);
+      }
+    }
+    
+    function playTurn() {
+      updateHandsDisplay();
+      let p = players[currentPlayer];
+      if (p.type === "ai") {
+        showMessage(p.name + " está jugando...");
+        setTimeout(function() {
+          let legalCards = [];
+          for (let i = 0; i < p.hand.length; i++) {
+            if (isLegalPlay(p, p.hand[i])) {
+              legalCards.push(i);
+            }
+          }
+          if (legalCards.length === 0) legalCards = p.hand.map((c, i) => i);
+          let choice = legalCards[Math.floor(Math.random() * legalCards.length)];
+          playCard(currentPlayer, choice);
+        }, 1000);
+      } else {
+        showMessage("Tu turno. Haz clic en una carta resaltada.");
+        updateHandsDisplay();
+      }
+    }
+    
+    function determineTrickWinner() {
+      let ledSuit = currentTrick[0].card.suit;
+      let winningCard = null;
+      let winner = null;
+      let trumps = currentTrick.filter(t => t.card.suit === trumpSuit);
+      if (trumps.length > 0) {
+        winningCard = trumps.reduce((prev, cur) =>
+          getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+        );
+      } else {
+        let ledCards = currentTrick.filter(t => t.card.suit === ledSuit);
+        winningCard = ledCards.reduce((prev, cur) =>
+          getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+        );
+      }
+      winner = winningCard.playerId;
+      players[winner].tricks++;
+      updatePlayerInfo();
+      showMessage(players[winner].name + " gana la baza.");
+      setTimeout(function(){
+        clearTrickArea();
+        currentTrick = [];
+        currentPlayer = winner;
+        if (players[0].hand.length > 0) {
+          setTimeout(playTurn, 800);
+        } else {
+          endRound();
+        }
+      }, 1500);
+    }
+    
+    function endRound() {
+      currentPhase = "roundOver";
+      players.forEach(p => {
+        if (p.bid === p.tricks) {
+          // Si acierta: 10 puntos + 3 por cada baza
+          p.score += (10 + 3 * p.tricks);
+        } else {
+          // Si falla: -3 por cada baza de diferencia
+          p.score -= 3 * Math.abs(p.tricks - p.bid);
+        }
+      });
+      updatePlayerInfo();
+      let summary = "Ronda finalizada. ";
+      players.forEach(p => {
+        summary += p.name + " apostó " + p.bid + " y consiguió " + p.tricks + " baza" + (p.tricks !== 1 ? "s" : "") + ". ";
+      });
+      showMessage(summary);
+      let restartBtn = document.getElementById("restart");
+      restartBtn.textContent = (currentRoundIndex < rounds.length - 1) ? "Siguiente Ronda" : "Reiniciar Juego";
+      restartBtn.style.display = "block";
+    }
+    
+    /* ====================
+       EVENTOS
+       ==================== */
+    document.getElementById("restart").addEventListener("click", function() {
+      document.getElementById("restart").style.display = "none";
+      if (currentRoundIndex < rounds.length - 1) {
+        currentRoundIndex++;
+        startRound();
+      } else {
+        alert("Juego terminado. Se reiniciará el juego.");
+        currentRoundIndex = 0;
+        players.forEach(p => p.score = 0);
+        startRound();
+      }
+    });
+    
+    document.getElementById("new-game").addEventListener("click", function() {
+      currentRoundIndex = 0;
+      players.forEach(p => p.score = 0);
+      startRound();
+    });
+    
+    /* ====================
+       INICIO DEL JUEGO
+       ==================== */
+    startRound();
+  </script>
+</body>
+</html>
