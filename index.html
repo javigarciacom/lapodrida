@@ -122,7 +122,7 @@
       color: #fff;
       z-index: 30;
     }
-    /* Cajas de info de los jugadores IA (3 filas, con fondo y dos columnas en la fila inferior) */
+    /* Cajas de info de los jugadores IA (3 filas) */
     .player-info {
       width: 150px;
       border: 5px solid #fff;
@@ -204,7 +204,7 @@
       background-color: #6f683a;
       font-size: 16px;
     }
-    /* Zona de las cartas del jugador humano */
+    /* Zona de las cartas del jugador humano (se mantienen como estaban originalmente) */
     #player-2-hand {
       position: absolute;
       bottom: 20px;
@@ -226,9 +226,10 @@
       overflow: hidden;
       z-index: 10;
     }
-    /* Carta del triunfo: se posiciona detrás de la caja del dealer.
-       Se utiliza getBoundingClientRect() para calcular el centro real de la caja del dealer respecto al contenedor de background.
-       Se posiciona de modo que su centro X coincida y su centro Y sea 40px por encima del centro de la caja. */
+    /* Carta del triunfo: se posiciona detrás de la caja del jugador activo.
+       Se calcula el centro horizontal de la caja activa y se utiliza un offset vertical base.
+       Si el dealer es North, se suma 30px para bajarla 30px más.
+    */
     #trump-card {
       position: absolute;
       width: 94px;
@@ -236,9 +237,9 @@
       background-size: cover;
       z-index: 15;
     }
-    /* Tabla de puntuación */
+    /* Tabla de puntuación: se posiciona de forma absoluta para quedar centrada en el contenedor #game */
     #scoreboard-overlay {
-      position: fixed;
+      position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -298,16 +299,16 @@
 </head>
 <body>
   <div id="game">
-    <!-- Botones "Nueva Partida" y "Puntuación" dentro del background -->
+    <!-- Botones "Nueva Partida" y "Puntuación" -->
     <button id="new-game">Nueva Partida</button>
     <button id="scoreboard-button">Puntuación</button>
-    <!-- Texto de ronda en la esquina inferior izquierda del background -->
+    <!-- Texto de ronda -->
     <div id="round-text"></div>
-    <!-- Texto de ayuda (mensaje), centrado arriba -->
+    <!-- Texto de ayuda (mensaje) -->
     <div id="message"></div>
     <div id="trick-area"></div>
     
-    <!-- Contenedor de background y cajas de info de IA -->
+    <!-- Contenedor de background y cajas de info -->
     <div id="bg-container">
       <img id="bg-image" src="img/fondoiPocha-hd.png" alt="Background">
       <div id="info-north" class="player-info"></div>
@@ -316,11 +317,11 @@
       <!-- Carta del triunfo -->
       <div id="trump-card"></div>
     </div>
-    <!-- Contenedor de apuestas para el jugador humano -->
+    <!-- Contenedor de apuestas -->
     <div id="bid-area"></div>
     <!-- Zona de las cartas del jugador humano -->
     <div id="player-2-hand"></div>
-    <!-- Caja de info del jugador humano, en la esquina inferior derecha de la pantalla -->
+    <!-- Caja de info del jugador humano -->
     <div id="info-south" class="player-info"></div>
   </div>
   
@@ -358,7 +359,6 @@
 
     /***********************
      * ASIGNAR NOMBRES ALEATORIOS A LAS IA
-     * (Nombres famosos con máximo 7 letras)
      ***********************/
     function assignAINames() {
       const aiNames = ["Newton", "Curie", "Tesla", "Hawkin", "Galilei", "Fermi", "Bohr", "Dirac", "Planck"];
@@ -449,7 +449,7 @@
       return img;
     }
 
-    // Para la carta de triunfo
+    // Para la carta de triunfo.
     function getCardImageSrc(card) {
       let num;
       if (card.rank === "S") num = "10";
@@ -464,7 +464,7 @@
       return "img/" + num + suitInitial + "-hd.png";
     }
 
-    // Actualiza la mano del jugador humano (sólo sus cartas)
+    // Actualiza la mano del jugador humano (sin cambios respecto a la versión original)
     function updateHandsDisplay() {
       let human = players.find(p => p.type === "human");
       let handDiv = document.getElementById("player-2-hand");
@@ -490,7 +490,7 @@
       }
     }
 
-    // Actualiza la info de cada jugador.
+    // Actualiza la información de cada jugador (contenido de las cajas) y luego resalta al jugador activo.
     function updatePlayerInfo() {
       players.forEach(p => {
         let infoDiv;
@@ -510,45 +510,70 @@
               <div class="player-tricks">${p.tricks}</div>
             </div>
           `;
-          infoDiv.style.borderColor = (p.id === dealer) ? "yellow" : "#fff";
+        }
+      });
+      highlightActivePlayer();
+    }
+
+    // Función que resalta el borde del jugador activo.
+    function highlightActivePlayer() {
+      let activeId = null;
+      if (currentPhase === "bidding") {
+        if (biddingIndex < biddingOrder.length) {
+          activeId = biddingOrder[biddingIndex];
+        }
+      } else if (currentPhase === "playing") {
+        activeId = currentPlayer;
+      }
+      players.forEach(p => {
+        let infoDiv;
+        if (p.type === "ai") {
+          if (p.position === "north") infoDiv = document.getElementById("info-north");
+          else if (p.position === "east") infoDiv = document.getElementById("info-east");
+          else if (p.position === "west") infoDiv = document.getElementById("info-west");
+        } else {
+          infoDiv = document.getElementById("info-south");
+        }
+        if (infoDiv) {
+          // Resalta el borde en amarillo si el id coincide con activeId; de lo contrario, en blanco.
+          infoDiv.style.borderColor = (p.id === activeId) ? "yellow" : "#fff";
         }
       });
     }
 
     // Actualiza el texto de ronda y posiciona la carta del triunfo.
     function updateRoundInfo() {
-      // Actualiza el texto de ronda en la esquina inferior izquierda del background.
       let roundText = document.getElementById("round-text");
       roundText.innerHTML = "R: " + (currentRoundIndex + 1) + " de " + rounds.length + "<br>B: " + handSize;
       
-      // Posiciona la carta del triunfo usando getBoundingClientRect() para obtener la posición real de la caja del dealer.
       let trumpCard = document.getElementById("trump-card");
       trumpCard.style.backgroundImage = "url(" + getCardImageSrc(trump) + ")";
+      
       let dealerBox = null;
       if (dealer === 0) dealerBox = document.getElementById("info-north");
       else if (dealer === 1) dealerBox = document.getElementById("info-east");
       else if (dealer === 2) dealerBox = document.getElementById("info-south");
       else if (dealer === 3) dealerBox = document.getElementById("info-west");
+      
       if (dealerBox) {
         let boxRect = dealerBox.getBoundingClientRect();
         let containerRect = document.getElementById("bg-container").getBoundingClientRect();
-        // Calcula el centro real de la caja respecto al contenedor:
+        // Calcula el centro de la caja respecto al contenedor.
         let boxCenterX = boxRect.left + boxRect.width / 2 - containerRect.left;
         let boxCenterY = boxRect.top + boxRect.height / 2 - containerRect.top;
-        // La carta tiene 94px de ancho y 140px de alto (centro = 47, 70).
-        // Queremos que su centro Y sea 40px por encima del centro de la caja:
         trumpCard.style.left = (boxCenterX - 47) + "px";
-        trumpCard.style.top = (boxCenterY - 40 - 70) + "px";
+        const trumpConstantOffset = 150; // Valor base para E, W y S
+        // Si el dealer es North, se suma 30px para bajar la carta 30px más.
+        if (dealer === 0) {
+          trumpCard.style.top = (boxCenterY - trumpConstantOffset + 30) + "px";
+        } else {
+          trumpCard.style.top = (boxCenterY - trumpConstantOffset) + "px";
+        }
       }
     }
 
-    // Muestra el mensaje de ayuda.
-    // Si es el turno del jugador, se indica también cuántas apuestas han realizado (biddingIndex).
+    // La función showMessage se conserva para depuración o mensajes informativos.
     function showMessage(text) {
-      // Si el mensaje indica "Tu turno para apostar", añadimos el número de apuestas ya realizadas.
-      if (text.indexOf("Tu turno para apostar") !== -1) {
-        text += " (ya se han realizado " + biddingIndex + " apuestas)";
-      }
       document.getElementById("message").textContent = text;
     }
 
@@ -674,7 +699,7 @@
       }
       trump = deck.pop();
       trumpSuit = trump.suit;
-      updateRoundInfo(); // Actualiza el texto de ronda y posiciona la carta del triunfo
+      updateRoundInfo();
       // Orden de juego: sentido de las agujas del reloj (todos reparten, incluido el humano).
       biddingOrder = [];
       for (let i = 1; i <= players.length; i++) {
@@ -687,12 +712,14 @@
     }
 
     function processNextBid() {
+      updatePlayerInfo();
+      // Aquí se espera que, antes de que el humano deba apostar, su caja se resalte.
       if (biddingIndex >= biddingOrder.length) {
         currentPhase = "playing";
         trickLeader = biddingOrder[0];
         currentPlayer = trickLeader;
-        showMessage("Apuestas completas. " + players.find(p => p.id === currentPlayer).name + " lidera.");
         updatePlayerInfo();
+        showMessage("Apuestas completas. " + players.find(p => p.id === currentPlayer).name + " lidera.");
         setTimeout(playTurn, 1000);
         return;
       }
@@ -701,12 +728,13 @@
       if (p.type === "ai") {
         let bid = aiComputeBid(pid);
         p.bid = bid;
-        showMessage(p.name + " apuesta " + bid);
         updatePlayerInfo();
+        showMessage(p.name + " apuesta " + bid);
         biddingIndex++;
         setTimeout(processNextBid, 1000);
       } else {
-        // Incluimos en el mensaje el número de apuestas ya realizadas.
+        // Antes de esperar la apuesta, forzamos la actualización del borde.
+        updatePlayerInfo();
         showMessage("Tu turno para apostar. Ya se han realizado " + biddingIndex + " apuestas. Elige un número entre 0 y " + handSize + ".");
         displayBidOptions();
       }
@@ -714,6 +742,8 @@
 
     function displayBidOptions() {
       clearBidArea();
+      // Llamamos a updatePlayerInfo() para asegurarnos de que la caja del jugador humano esté resaltada.
+      updatePlayerInfo();
       let bidArea = document.getElementById("bid-area");
       for (let i = 0; i <= handSize; i++) {
         let btn = document.createElement("button");
@@ -721,8 +751,8 @@
         btn.classList.add("bid-button");
         btn.addEventListener("click", function() {
           players.find(p => p.type === "human").bid = i;
-          showMessage("Apuestas: " + i);
           updatePlayerInfo();
+          showMessage("Apuestas: " + i);
           clearBidArea();
           biddingIndex++;
           setTimeout(processNextBid, 500);
@@ -801,7 +831,9 @@
     }
 
     function playTurn() {
-      updateHandsDisplay();
+      updatePlayerInfo();
+      // Forzamos el resaltado justo antes de esperar la acción.
+      highlightActivePlayer();
       let p = players.find(p => p.id === currentPlayer);
       if (p.type === "ai") {
         showMessage(p.name + " está jugando...");
@@ -891,7 +923,6 @@
     }
 
     function endRound() {
-      // Actualiza la puntuación de cada jugador.
       players.forEach(p => {
         if (p.bid === p.tricks) {
           p.score += (10 + 3 * p.tricks);
@@ -911,7 +942,6 @@
         summary += p.name + " apostó " + p.bid + " y consiguió " + p.tricks + " baza" + (p.tricks !== 1 ? "s" : "") + ". ";
       });
       showMessage(summary);
-      // Avanza automáticamente a la siguiente ronda después de 2 segundos, o si se han jugado todas, muestra la tabla de puntuación.
       if (currentRoundIndex < rounds.length - 1) {
         currentRoundIndex++;
         setTimeout(startRound, 2000);
@@ -929,7 +959,7 @@
       let table = document.createElement("table");
       table.id = "scoreboard-table";
       table.style.borderCollapse = "collapse";
-      // Orden deseado: Ronda, AI West, AI North, AI East, Tú
+      // Orden: Ronda, AI West, AI North, AI East, Tú
       let scoreboardOrder = [];
       scoreboardOrder.push(players.find(p => p.position === "west"));
       scoreboardOrder.push(players.find(p => p.position === "north"));
@@ -1010,6 +1040,7 @@
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
+      contentDiv.innerHTML = "";
       contentDiv.appendChild(table);
       document.getElementById("scoreboard-overlay").style.display = "block";
     }
