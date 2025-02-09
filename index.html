@@ -258,7 +258,7 @@
     let handSize = rounds[currentRoundIndex];
     // Array global para almacenar la info de cada ronda (16 rondas)
     let scoreData = [];
-    
+
     /* ====================
        FUNCIONES AUXILIARES DEL JUEGO
        ==================== */
@@ -273,14 +273,14 @@
       }
       return deck;
     }
-    
+
     function shuffle(array) {
       for (let i = array.length - 1; i > 0; i--) {
         let j = Math.floor(Math.random() * (i + 1));
         [array[i], array[j]] = [array[j], array[i]];
       }
     }
-    
+
     function getRankValue(rank) {
       const rankOrder = {
         "1": 12,
@@ -298,7 +298,7 @@
       };
       return rankOrder[rank] || 0;
     }
-    
+
     function getSuitSymbol(suit) {
       switch (suit) {
         case "espadas": return "E";
@@ -308,7 +308,7 @@
         default: return "";
       }
     }
-    
+
     // Crea un elemento <img> para la carta.
     // Si faceUp es true, usa la ruta: "img/" + [número] + [inicial] + "-hd.png"
     // con S→10, C→11, R→12; si no, usa "img/reverso-hd.png".
@@ -334,7 +334,7 @@
       }
       return img;
     }
-    
+
     function updateHandsDisplay() {
       for (let p of players) {
         let handDiv = document.getElementById(`player-${p.id}-hand`);
@@ -367,7 +367,7 @@
         }
       }
     }
-    
+
     function updatePlayerInfo() {
       players.forEach(p => {
         let nameDiv = document.getElementById(`player-${p.id}-name`);
@@ -378,7 +378,7 @@
                                 " | Puntuación: " + p.score;
       });
     }
-    
+
     function updateRoundInfo() {
       let roundInfoDiv = document.getElementById("round-info");
       roundInfoDiv.innerHTML = "";
@@ -395,23 +395,119 @@
       trumpCardEl.style.fontSize = "16px";
       roundInfoDiv.appendChild(trumpCardEl);
     }
-    
+
     function showMessage(text) {
       document.getElementById("message").textContent = text;
     }
-    
+
     function clearBidArea() {
       document.getElementById("bid-area").innerHTML = "";
     }
-    
+
     function clearTrickArea() {
       document.getElementById("trick-area").innerHTML = "";
     }
-    
+
+    /* ====================
+       FUNCIONES AUXILIARES PARA LA MEJORA DE LA IA
+       ==================== */
+    // Determina si cardA vence a cardB en la baza actual
+    function cardBeats(cardA, cardB, ledSuit, trumpSuit) {
+      // Si ambas son del mismo palo, se compara su valor
+      if (cardA.suit === cardB.suit) {
+        return getRankValue(cardA.rank) > getRankValue(cardB.rank);
+      }
+      // Una carta de triunfo siempre vence a una carta de otro palo
+      if (cardA.suit === trumpSuit && cardB.suit !== trumpSuit) {
+        return true;
+      }
+      return false;
+    }
+
+    // La IA selecciona la carta a jugar de forma inteligente
+    function aiSelectCard(player) {
+      let legalIndices = [];
+      for (let i = 0; i < player.hand.length; i++) {
+        if (isLegalPlay(player, player.hand[i])) {
+          legalIndices.push(i);
+        }
+      }
+      if (legalIndices.length === 0) legalIndices = player.hand.map((c, i) => i);
+
+      // Si la baza está vacía, la IA lidera
+      if (currentTrick.length === 0) {
+        // Prefiere jugar una carta que no sea de triunfo para conservarlos
+        let nonTrumpIndices = legalIndices.filter(i => player.hand[i].suit !== trumpSuit);
+        if (nonTrumpIndices.length > 0) {
+          // Elige la carta de menor valor entre las no triunfo
+          let bestIndex = nonTrumpIndices[0];
+          for (let idx of nonTrumpIndices) {
+            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        } else {
+          // Si solo tiene triunfos, descarta el de menor valor
+          let bestIndex = legalIndices[0];
+          for (let idx of legalIndices) {
+            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        }
+      } else {
+        // Si no lidera, intenta ganar la baza si es posible
+        let ledSuit = currentTrick[0].card.suit;
+        let currentWinning = currentTrick[0].card;
+        for (let i = 1; i < currentTrick.length; i++) {
+          let candidate = currentTrick[i].card;
+          if (cardBeats(candidate, currentWinning, ledSuit, trumpSuit)) {
+            currentWinning = candidate;
+          }
+        }
+        // Busca entre las cartas legales aquellas que puedan superar la actual ganadora
+        let winningCandidates = legalIndices.filter(i =>
+          cardBeats(player.hand[i], currentWinning, ledSuit, trumpSuit)
+        );
+        if (winningCandidates.length > 0) {
+          // De las que pueden ganar, elige la de mínima fuerza
+          let bestIndex = winningCandidates[0];
+          for (let idx of winningCandidates) {
+            let candidate = player.hand[idx];
+            let bestCandidate = player.hand[bestIndex];
+            if (candidate.suit === bestCandidate.suit) {
+              if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
+                bestIndex = idx;
+              }
+            } else {
+              if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
+                bestIndex = idx;
+              }
+            }
+          }
+          return bestIndex;
+        } else {
+          // Si no puede ganar, descarta la carta de menor valor
+          let bestIndex = legalIndices[0];
+          for (let idx of legalIndices) {
+            let candidate = player.hand[idx];
+            let bestCandidate = player.hand[bestIndex];
+            if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
+              bestIndex = idx;
+            } else if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        }
+      }
+    }
+
     /* ====================
        LÓGICA DEL JUEGO
        ==================== */
-    
     function startRound() {
       currentPhase = "bidding";
       currentTrick = [];
@@ -425,7 +521,7 @@
       clearTrickArea();
       clearBidArea();
       document.getElementById("restart").style.display = "none";
-      
+
       deck = createDeck();
       shuffle(deck);
       for (let i = 0; i < handSize; i++) {
@@ -433,23 +529,23 @@
           p.hand.push(deck.pop());
         }
       }
-      
+
       trump = deck.pop();
       trumpSuit = trump.suit;
-      
+
       dealer = Math.floor(Math.random() * players.length);
       biddingOrder = [];
       for (let i = 1; i <= players.length; i++) {
         biddingOrder.push((dealer + i) % players.length);
       }
-      
+
       updatePlayerInfo();
       updateHandsDisplay();
       updateRoundInfo();
       showMessage("Trump: " + getSuitSymbol(trumpSuit) + " (" + trumpSuit + ")");
       setTimeout(processNextBid, 1000);
     }
-    
+
     function processNextBid() {
       if (biddingIndex >= biddingOrder.length) {
         currentPhase = "playing";
@@ -474,7 +570,7 @@
         displayBidOptions();
       }
     }
-    
+
     function displayBidOptions() {
       clearBidArea();
       let bidArea = document.getElementById("bid-area");
@@ -493,18 +589,26 @@
         bidArea.appendChild(btn);
       }
     }
-    
+
+    // Nueva versión de aiComputeBid: evalúa cada carta, dando mayor peso a las cartas de triunfo
     function aiComputeBid(pid) {
       let p = players[pid];
-      let count = 0;
+      let expectedTricks = 0;
       for (let card of p.hand) {
-        if (card.suit === trumpSuit && getRankValue(card.rank) >= 10) count++;
+        if (card.suit === trumpSuit) {
+          expectedTricks += getRankValue(card.rank) / 12;
+        } else {
+          if (card.rank === "1" || card.rank === "3") {
+            expectedTricks += 0.5;
+          }
+        }
       }
-      let bid = count + Math.floor(Math.random() * 2);
+      let bid = Math.round(expectedTricks + (Math.random() * 0.5 - 0.25));
+      if (bid < 0) bid = 0;
       if (bid > handSize) bid = handSize;
       return bid;
     }
-    
+
     // Regla para jugar: si el jugador tiene cartas del mismo palo que abrió la baza, debe jugarlas;
     // si no, si tiene cartas de triunfo, debe jugarlas; de lo contrario, puede jugar cualquier carta.
     function isLegalPlay(player, card) {
@@ -522,7 +626,7 @@
         }
       }
     }
-    
+
     function onHumanCardClick(event) {
       let index = parseInt(event.currentTarget.dataset.index);
       let card = players[2].hand[index];
@@ -532,7 +636,7 @@
       }
       playCard(2, index);
     }
-    
+
     // Posición de las cartas jugadas en el tapete para un contenedor de 350×350px:
     // North: top: 10px; left: 128px;
     // South: bottom: 10px; left: 128px;
@@ -565,21 +669,15 @@
         setTimeout(playTurn, 500);
       }
     }
-    
+
+    // Función playTurn mejorada que utiliza la IA inteligente
     function playTurn() {
       updateHandsDisplay();
       let p = players[currentPlayer];
       if (p.type === "ai") {
         showMessage(p.name + " está jugando...");
         setTimeout(function() {
-          let legalCards = [];
-          for (let i = 0; i < p.hand.length; i++) {
-            if (isLegalPlay(p, p.hand[i])) {
-              legalCards.push(i);
-            }
-          }
-          if (legalCards.length === 0) legalCards = p.hand.map((c, i) => i);
-          let choice = legalCards[Math.floor(Math.random() * legalCards.length)];
+          let choice = aiSelectCard(p);
           playCard(currentPlayer, choice);
         }, 1000);
       } else {
@@ -587,7 +685,7 @@
         updateHandsDisplay();
       }
     }
-    
+
     function determineTrickWinner() {
       let ledSuit = currentTrick[0].card.suit;
       let winningCard = null;
@@ -609,7 +707,7 @@
       showMessage(players[winner].name + " gana la baza.");
       animateTrickCards(winner);
     }
-    
+
     function updateWinningCardHighlight() {
       if (currentTrick.length === 0) return;
       let ledSuit = currentTrick[0].card.suit;
@@ -632,7 +730,7 @@
         winningItem.element.classList.add("winning-card");
       }
     }
-    
+
     function animateTrickCards(winner) {
       let direction = "";
       if (players[winner].position === "north") {
@@ -661,10 +759,9 @@
         }
       }, 600);
     }
-    
+
     function endRound() {
       currentPhase = "roundOver";
-      // Actualizar la puntuación de cada jugador según su resultado en la ronda
       players.forEach(p => {
         if (p.bid === p.tricks) {
           p.score += (10 + 3 * p.tricks);
@@ -672,14 +769,13 @@
           p.score -= 3 * Math.abs(p.tricks - p.bid);
         }
       });
-      // Guardar la información de la ronda en scoreData
       let roundResult = { round: currentRoundIndex + 1, handSize: handSize, results: [] };
       players.forEach(p => {
         let roundPoints = (p.bid === p.tricks) ? (10 + 3 * p.tricks) : (-3 * Math.abs(p.tricks - p.bid));
         roundResult.results.push({ roundPoints: roundPoints, total: p.score });
       });
       scoreData.push(roundResult);
-      
+
       updatePlayerInfo();
       let summary = "Ronda finalizada. ";
       players.forEach(p => {
@@ -690,7 +786,7 @@
       restartBtn.textContent = (currentRoundIndex < rounds.length - 1) ? "Siguiente Ronda" : "Reiniciar Juego";
       restartBtn.style.display = "block";
     }
-    
+
     /* ====================
        TABLA DE PUNTUACIÓN
        ==================== */
@@ -700,7 +796,7 @@
       let table = document.createElement("table");
       table.id = "scoreboard-table";
       table.style.borderCollapse = "collapse";
-      
+
       // Cabecera: dos filas
       let thead = document.createElement("thead");
       let headerRow1 = document.createElement("tr");
@@ -719,7 +815,7 @@
         headerRow1.appendChild(thPlayer);
       });
       thead.appendChild(headerRow1);
-      
+
       let headerRow2 = document.createElement("tr");
       let thRoundNum = document.createElement("th");
       thRoundNum.textContent = "Número";
@@ -737,8 +833,8 @@
       });
       thead.appendChild(headerRow2);
       table.appendChild(thead);
-      
-      // Cuerpo: generar 16 filas (para 16 rondas), aunque aún no se hayan jugado todas
+
+      // Cuerpo: generar 16 filas (para 16 rondas)
       let tbody = document.createElement("tbody");
       for (let i = 1; i <= 16; i++) {
         let tr = document.createElement("tr");
@@ -781,17 +877,17 @@
       contentDiv.appendChild(table);
       document.getElementById("scoreboard-overlay").style.display = "block";
     }
-    
+
     function hideScoreboard() {
       document.getElementById("scoreboard-overlay").style.display = "none";
     }
-    
+
     /* ====================
        EVENTOS DEL SCOREBOARD
        ==================== */
     document.getElementById("scoreboard-button").addEventListener("click", showScoreboard);
     document.getElementById("scoreboard-close").addEventListener("click", hideScoreboard);
-    
+
     /* ====================
        EVENTOS DEL JUEGO
        ==================== */
@@ -808,18 +904,17 @@
         startRound();
       }
     });
-    
+
     document.getElementById("new-game").addEventListener("click", function() {
       currentRoundIndex = 0;
       players.forEach(p => p.score = 0);
       scoreData = [];
       startRound();
     });
-    
+
     /* ====================
        INICIO DEL JUEGO
        ==================== */
-    // Asegurarse de declarar scoreData sólo una vez (ya se declaró al inicio)
     startRound();
   </script>
 </body>
