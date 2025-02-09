@@ -490,7 +490,7 @@
       }
     }
 
-    // Actualiza la información de cada jugador (contenido de las cajas) y luego resalta al jugador activo.
+    // Actualiza la información de cada jugador (contenido de las cajas)
     function updatePlayerInfo() {
       players.forEach(p => {
         let infoDiv;
@@ -515,13 +515,11 @@
       highlightActivePlayer();
     }
 
-    // Función que resalta el borde del jugador activo.
+    // Función para resaltar (poner en amarillo) el borde del jugador que tiene que actuar
     function highlightActivePlayer() {
       let activeId = null;
       if (currentPhase === "bidding") {
-        if (biddingIndex < biddingOrder.length) {
-          activeId = biddingOrder[biddingIndex];
-        }
+        if (biddingIndex < biddingOrder.length) activeId = biddingOrder[biddingIndex];
       } else if (currentPhase === "playing") {
         activeId = currentPlayer;
       }
@@ -535,7 +533,6 @@
           infoDiv = document.getElementById("info-south");
         }
         if (infoDiv) {
-          // Resalta el borde en amarillo si el id coincide con activeId; de lo contrario, en blanco.
           infoDiv.style.borderColor = (p.id === activeId) ? "yellow" : "#fff";
         }
       });
@@ -558,12 +555,11 @@
       if (dealerBox) {
         let boxRect = dealerBox.getBoundingClientRect();
         let containerRect = document.getElementById("bg-container").getBoundingClientRect();
-        // Calcula el centro de la caja respecto al contenedor.
         let boxCenterX = boxRect.left + boxRect.width / 2 - containerRect.left;
         let boxCenterY = boxRect.top + boxRect.height / 2 - containerRect.top;
         trumpCard.style.left = (boxCenterX - 47) + "px";
         const trumpConstantOffset = 150; // Valor base para E, W y S
-        // Si el dealer es North, se suma 30px para bajar la carta 30px más.
+        // Si el dealer es North, se suma 30px para bajarla 30px más.
         if (dealer === 0) {
           trumpCard.style.top = (boxCenterY - trumpConstantOffset + 30) + "px";
         } else {
@@ -606,65 +602,118 @@
         }
       }
       if (legalIndices.length === 0) legalIndices = player.hand.map((c, i) => i);
+      
+      // Estrategia mejorada: si el jugador ya ha ganado suficientes bazas (o al menos está a la par con su apuesta), intenta perder la baza; de lo contrario, intenta ganar.
+      let wantToWin = (player.tricks < player.bid);
+      
       if (currentTrick.length === 0) {
-        let nonTrumpIndices = legalIndices.filter(i => player.hand[i].suit !== trumpSuit);
-        if (nonTrumpIndices.length > 0) {
-          let bestIndex = nonTrumpIndices[0];
-          for (let idx of nonTrumpIndices) {
-            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+        if (wantToWin) {
+          // Si lidera y quiere ganar, elige la carta más alta de las legales.
+          let bestIndex = legalIndices[0];
+          for (let idx of legalIndices) {
+            if (getRankValue(player.hand[idx].rank) > getRankValue(player.hand[bestIndex].rank)) {
               bestIndex = idx;
             }
           }
           return bestIndex;
         } else {
-          let bestIndex = legalIndices[0];
+          // Si no quiere ganar, juega la carta más baja.
+          let worstIndex = legalIndices[0];
           for (let idx of legalIndices) {
-            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
-              bestIndex = idx;
+            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[worstIndex].rank)) {
+              worstIndex = idx;
             }
           }
-          return bestIndex;
+          return worstIndex;
         }
       } else {
         let ledSuit = currentTrick[0].card.suit;
-        let currentWinning = currentTrick[0].card;
-        for (let i = 1; i < currentTrick.length; i++) {
-          let candidate = currentTrick[i].card;
-          if (cardBeats(candidate, currentWinning, ledSuit, trumpSuit)) {
-            currentWinning = candidate;
-          }
-        }
-        let winningCandidates = legalIndices.filter(i =>
-          cardBeats(player.hand[i], currentWinning, ledSuit, trumpSuit)
-        );
-        if (winningCandidates.length > 0) {
-          let bestIndex = winningCandidates[0];
-          for (let idx of winningCandidates) {
-            let candidate = player.hand[idx];
-            let bestCandidate = player.hand[bestIndex];
-            if (candidate.suit === bestCandidate.suit) {
-              if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
-                bestIndex = idx;
+        let cardsFollowingSuit = legalIndices.filter(i => player.hand[i].suit === ledSuit);
+        if (cardsFollowingSuit.length === 0) {
+          if (wantToWin) {
+            let trumpIndices = legalIndices.filter(i => player.hand[i].suit === trumpSuit);
+            if (trumpIndices.length > 0) {
+              let currentWinning = currentTrick[0].card;
+              for (let i = 1; i < currentTrick.length; i++) {
+                if (cardBeats(currentTrick[i].card, currentWinning, ledSuit, trumpSuit)) {
+                  currentWinning = currentTrick[i].card;
+                }
+              }
+              let winningCandidates = trumpIndices.filter(i =>
+                cardBeats(player.hand[i], currentWinning, ledSuit, trumpSuit)
+              );
+              if (winningCandidates.length > 0) {
+                let bestIndex = winningCandidates[0];
+                for (let idx of winningCandidates) {
+                  if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+                    bestIndex = idx;
+                  }
+                }
+                return bestIndex;
+              } else {
+                let bestIndex = trumpIndices[0];
+                for (let idx of trumpIndices) {
+                  if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+                    bestIndex = idx;
+                  }
+                }
+                return bestIndex;
               }
             } else {
-              if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
-                bestIndex = idx;
+              let bestIndex = legalIndices[0];
+              for (let idx of legalIndices) {
+                if (getRankValue(player.hand[idx].rank) > getRankValue(player.hand[bestIndex].rank)) {
+                  bestIndex = idx;
+                }
+              }
+              return bestIndex;
+            }
+          } else {
+            let worstIndex = legalIndices[0];
+            for (let idx of legalIndices) {
+              if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[worstIndex].rank)) {
+                worstIndex = idx;
               }
             }
+            return worstIndex;
           }
-          return bestIndex;
         } else {
-          let bestIndex = legalIndices[0];
-          for (let idx of legalIndices) {
-            let candidate = player.hand[idx];
-            let bestCandidate = player.hand[bestIndex];
-            if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
-              bestIndex = idx;
-            } else if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
-              bestIndex = idx;
+          if (wantToWin) {
+            let currentWinning = currentTrick[0].card;
+            for (let i = 1; i < currentTrick.length; i++) {
+              if (cardBeats(currentTrick[i].card, currentWinning, ledSuit, trumpSuit)) {
+                currentWinning = currentTrick[i].card;
+              }
             }
+            let winningCandidates = cardsFollowingSuit.filter(i =>
+              cardBeats(player.hand[i], currentWinning, ledSuit, trumpSuit)
+            );
+            if (winningCandidates.length > 0) {
+              let bestIndex = winningCandidates[0];
+              for (let idx of winningCandidates) {
+                if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+                  bestIndex = idx;
+                }
+              }
+              return bestIndex;
+            } else {
+              let worstIndex = cardsFollowingSuit[0];
+              for (let idx of cardsFollowingSuit) {
+                if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[worstIndex].rank)) {
+                  worstIndex = idx;
+                }
+              }
+              return worstIndex;
+            }
+          } else {
+            let worstIndex = cardsFollowingSuit[0];
+            for (let idx of cardsFollowingSuit) {
+              if (getRankValue(player.hand[idx].rank) > getRankValue(player.hand[worstIndex].rank)) {
+                worstIndex = idx;
+              }
+            }
+            return worstIndex;
           }
-          return bestIndex;
         }
       }
     }
@@ -673,7 +722,6 @@
      * LÓGICA DEL JUEGO
      ***********************/
     function startRound() {
-      // Si es la primera ronda, elegir dealer al azar; luego, avanzar en sentido de las agujas del reloj.
       if (currentRoundIndex === 0) {
         dealer = Math.floor(Math.random() * players.length);
       } else {
@@ -700,7 +748,6 @@
       trump = deck.pop();
       trumpSuit = trump.suit;
       updateRoundInfo();
-      // Orden de juego: sentido de las agujas del reloj (todos reparten, incluido el humano).
       biddingOrder = [];
       for (let i = 1; i <= players.length; i++) {
         biddingOrder.push((dealer + i) % players.length);
@@ -713,7 +760,6 @@
 
     function processNextBid() {
       updatePlayerInfo();
-      // Aquí se espera que, antes de que el humano deba apostar, su caja se resalte.
       if (biddingIndex >= biddingOrder.length) {
         currentPhase = "playing";
         trickLeader = biddingOrder[0];
@@ -733,7 +779,6 @@
         biddingIndex++;
         setTimeout(processNextBid, 1000);
       } else {
-        // Antes de esperar la apuesta, forzamos la actualización del borde.
         updatePlayerInfo();
         showMessage("Tu turno para apostar. Ya se han realizado " + biddingIndex + " apuestas. Elige un número entre 0 y " + handSize + ".");
         displayBidOptions();
@@ -742,7 +787,6 @@
 
     function displayBidOptions() {
       clearBidArea();
-      // Llamamos a updatePlayerInfo() para asegurarnos de que la caja del jugador humano esté resaltada.
       updatePlayerInfo();
       let bidArea = document.getElementById("bid-area");
       for (let i = 0; i <= handSize; i++) {
@@ -832,7 +876,6 @@
 
     function playTurn() {
       updatePlayerInfo();
-      // Forzamos el resaltado justo antes de esperar la acción.
       highlightActivePlayer();
       let p = players.find(p => p.id === currentPlayer);
       if (p.type === "ai") {
