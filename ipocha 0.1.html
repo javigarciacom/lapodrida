@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- Meta viewport para dispositivos móviles -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>La Podrida – Juego de Cartas</title>
+  <style>
+    /* RESET BÁSICO */
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      /* Aseguramos que el contenido no se corte en la parte inferior en dispositivos con área segura (como el iPad) */
+      padding-bottom: env(safe-area-inset-bottom, 20px);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    /* Contenedor principal (sin escalado) – visualizado en tamaño de diseño perfecto */
+    #game {
+      position: relative;
+      width: 960px;
+      height: 640px;
+      margin: 0 auto;
+      background: transparent;
+    }
+    /* Contenedor de la imagen de background (tamaño original: 960x640) */
+    #bg-container {
+      position: absolute;
+      width: 960px;
+      height: 640px;
+      left: 0;
+      top: 0;
+      z-index: 5;
+    }
+    #bg-container img {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* Botones "Nueva Partida" y "Puntuación" dentro del background */
+    #new-game, #scoreboard-button {
+      position: absolute;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      transition: background-color 0.3s ease, transform 0.2s ease;
+      z-index: 30;
+      background-color: #bfb182;
+      color: #fff;
+    }
+    /* "Nueva Partida" en la esquina superior izquierda del background */
+    #new-game {
+      top: 10px;
+      left: 10px;
+    }
+    /* "Puntuación" en la esquina superior derecha del background */
+    #scoreboard-button {
+      top: 10px;
+      right: 10px;
+    }
+    #new-game:hover, #scoreboard-button:hover {
+      background-color: #6f683a;
+    }
+    #new-game:active, #scoreboard-button:active {
+      transform: scale(0.98);
+    }
+    /* Eliminamos el botón de reinicio (avance automático) */
+    #restart {
+      display: none;
+    }
+    /* Botones circulares para apostar (selectores de bazas) */
+    .bid-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      font-size: 20px;
+      margin: 5px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      background-color: #bfb182;
+      transition: background-color 0.3s ease, transform 0.2s ease;
+    }
+    .bid-button:hover {
+      background-color: #6f683a;
+    }
+    .bid-button:active {
+      transform: scale(0.98);
+    }
+    /* Contenedor de apuestas para el jugador humano, 15px por encima de las cartas */
+    #bid-area {
+      position: absolute;
+      bottom: 175px; /* 20 + 140 + 15 */
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+    }
+    /* Texto de ayuda (mensaje): centrado en la parte superior de la pantalla */
+    #message {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 5px;
+      z-index: 40;
+      text-align: center;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    /* Texto de ronda en la esquina inferior izquierda del background */
+    #round-text {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 18px;
+      color: #fff;
+      z-index: 30;
+    }
+    /* Cajas de info de los jugadores (IA y humano) */
+    .player-info {
+      width: 150px;
+      border: 5px solid #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      text-align: center;
+      font-family: sans-serif;
+      position: absolute;
+      z-index: 20;
+    }
+    /* Posiciones de las cajas de info de las IA: se desplazan 20px hacia el centro */
+    #info-north {
+      top: 20px;
+      left: calc(50% - 75px);
+    }
+    #info-east {
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+    }
+    #info-west {
+      top: 50%;
+      left: 20px;
+      transform: translateY(-50%);
+    }
+    /* Caja de info del jugador humano: se coloca en la esquina inferior derecha de la pantalla */
+    #info-south {
+      position: absolute;
+      width: 150px;
+      right: 10px;
+      bottom: 10px;
+      z-index: 20;
+      border: 5px solid #fff;
+      border-radius: 10px;
+    }
+    /* Estructura interna de las cajas de info: 3 filas (nombre, puntuación y fila inferior con 2 columnas) */
+    .player-name {
+      background-color: #444;
+      color: #fff;
+      padding: 5px;
+      font-size: 14px;
+    }
+    .player-score {
+      background-color: #000;
+      color: #fff;
+      padding: 5px;
+      font-size: 28px;
+    }
+    .player-stats {
+      display: flex;
+    }
+    .player-bid, .player-tricks {
+      flex: 1;
+      padding: 5px;
+      font-size: 16px;
+    }
+    .player-bid {
+      background-color: #d3d3d3;
+      color: #000;
+    }
+    .player-tricks {
+      background-color: #444;
+      color: #fff;
+    }
+    /* Colores específicos para la caja de info del jugador humano */
+    #info-south .player-name {
+      background-color: #6f683a;
+      font-size: 16px;
+    }
+    #info-south .player-score {
+      background-color: #beaf84;
+      font-size: 28px;
+    }
+    #info-south .player-bid {
+      background-color: #b5a16c;
+      font-size: 16px;
+    }
+    #info-south .player-tricks {
+      background-color: #6f683a;
+      font-size: 16px;
+    }
+    /* Zona de las cartas del jugador humano */
+    #player-2-hand {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+    }
+    /* Tapete para las cartas jugadas */
+    #trick-area {
+      position: absolute;
+      width: 350px;
+      height: 350px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: transparent;
+      border: none;
+      border-radius: 10px;
+      overflow: hidden;
+      z-index: 10;
+    }
+    /* Carta del triunfo: se posiciona detrás de la caja del dealer.
+       Su centro X coincide con el centro de la caja del dealer y su centro Y es 40px por encima del centro.
+       Como la carta mide 140px de alto (centro = 70px), su top = (centro de la caja - 40 - 70).
+    */
+    #trump-card {
+      position: absolute;
+      width: 94px;
+      height: 140px;
+      background-size: cover;
+      z-index: 15;
+    }
+    /* Tabla de puntuación */
+    #scoreboard-overlay {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.95);
+      color: black;
+      font-family: "Courier New", monospace;
+      padding: 20px;
+      border: 2px solid #000;
+      z-index: 50;
+      max-height: 90vh;
+      overflow: auto;
+    }
+    #scoreboard-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #scoreboard-table th, #scoreboard-table td {
+      border: 1px solid black;
+      padding: 5px;
+      text-align: center;
+    }
+    .main-column {
+      border-right: 2px solid black;
+    }
+    .separator {
+      border-bottom: 2px solid black;
+    }
+    #scoreboard-close {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 18px;
+    }
+    /* Transiciones en las cartas */
+    .card {
+      width: 94px;
+      height: 140px;
+      margin: 3px 5px;
+      transition: all 0.3s ease;
+    }
+    .played-card {
+      position: absolute;
+      width: 94px;
+      height: 140px;
+      z-index: 5;
+      transition: all 0.5s ease-out;
+    }
+    .card.valid {
+      filter: drop-shadow(0 0 15px yellow);
+    }
+    .winning-card {
+      filter: drop-shadow(0 0 15px gold);
+    }
+  </style>
+</head>
+<body>
+  <div id="game">
+    <!-- Botones "Nueva Partida" y "Puntuación" en el background -->
+    <button id="new-game">Nueva Partida</button>
+    <button id="scoreboard-button">Puntuación</button>
+    <!-- Texto de ronda en la esquina inferior izquierda del background -->
+    <div id="round-text"></div>
+    <!-- Texto de ayuda, centrado en la parte superior -->
+    <div id="message"></div>
+    <div id="trick-area"></div>
+    
+    <!-- Contenedor de background y cajas de info de IA -->
+    <div id="bg-container">
+      <img id="bg-image" src="img/fondoiPocha-hd.png" alt="Background">
+      <div id="info-north" class="player-info"></div>
+      <div id="info-east" class="player-info"></div>
+      <div id="info-west" class="player-info"></div>
+      <!-- Carta del triunfo -->
+      <div id="trump-card"></div>
+    </div>
+    <!-- Contenedor de apuestas para el jugador humano -->
+    <div id="bid-area"></div>
+    <!-- Zona de las cartas del jugador humano -->
+    <div id="player-2-hand"></div>
+    <!-- Caja de info del jugador humano en la esquina inferior derecha de la pantalla -->
+    <div id="info-south" class="player-info"></div>
+  </div>
+  
+  <!-- Scoreboard Overlay -->
+  <div id="scoreboard-overlay" style="display: none;">
+    <div id="scoreboard-close">X</div>
+    <div id="scoreboard-content"></div>
+  </div>
+  
+  <script>
+    /***********************
+     * VARIABLES Y ESTADO DEL JUEGO
+     ***********************/
+    const rounds = [1,2,3,4,5,5,5,5,5,5,5,5,4,3,2,1];
+    let currentRoundIndex = 0;
+    let handSize = rounds[currentRoundIndex];
+    const suitOrder = { "oros": 0, "bastos": 1, "copas": 2, "espadas": 3 };
+    let players = [
+      { id: 0, name: "AI North", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "north" },
+      { id: 1, name: "AI East", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "east" },
+      { id: 2, name: "Tú", type: "human", hand: [], bid: null, tricks: 0, score: 0, position: "south" },
+      { id: 3, name: "AI West", type: "ai", hand: [], bid: null, tricks: 0, score: 0, position: "west" }
+    ];
+    let deck = [];
+    let trump = null;
+    let trumpSuit = null;
+    let dealer = null;
+    let biddingOrder = [];
+    let biddingIndex = 0;
+    let currentPhase = "bidding"; // "bidding", "playing", "roundOver"
+    let currentTrick = [];
+    let trickLeader = null;
+    let currentPlayer = null;
+    let scoreData = [];
+
+    /***********************
+     * ASIGNAR NOMBRES ALEATORIOS A LAS IA
+     ***********************/
+    function assignAINames() {
+      const aiNames = ["Newton", "Curie", "Tesla", "Hawkin", "Galilei", "Fermi", "Bohr", "Dirac", "Planck"];
+      for (let i = aiNames.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [aiNames[i], aiNames[j]] = [aiNames[j], aiNames[i]];
+      }
+      let count = 0;
+      players.forEach(p => {
+        if (p.type === "ai") {
+          p.name = aiNames[count];
+          count++;
+        }
+      });
+    }
+
+    /***********************
+     * FUNCIONES AUXILIARES DEL JUEGO
+     ***********************/
+    function createDeck() {
+      const suits = ["espadas", "oros", "copas", "bastos"];
+      const ranks = ["1","2","3","4","5","6","7","8","9","S","C","R"];
+      let deck = [];
+      for (let suit of suits) {
+        for (let rank of ranks) {
+          deck.push({ suit, rank });
+        }
+      }
+      return deck;
+    }
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        let j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    function getRankValue(rank) {
+      const rankOrder = {
+        "1": 12,
+        "3": 11,
+        "R": 10,
+        "C": 9,
+        "S": 8,
+        "9": 7,
+        "8": 6,
+        "7": 5,
+        "6": 4,
+        "5": 3,
+        "4": 2,
+        "2": 1
+      };
+      return rankOrder[rank] || 0;
+    }
+
+    function getSuitSymbol(suit) {
+      switch (suit) {
+        case "espadas": return "E";
+        case "oros":    return "O";
+        case "copas":   return "C";
+        case "bastos":  return "B";
+        default: return "";
+      }
+    }
+
+    // Crea un elemento <img> para la carta.
+    function createCardElement(card, faceUp = true) {
+      let img = document.createElement("img");
+      img.classList.add("card");
+      img.width = 94;
+      img.height = 140;
+      if (!faceUp) {
+        img.src = "img/reverso-hd.png";
+      } else {
+        let num;
+        if (card.rank === "S") num = "10";
+        else if (card.rank === "C") num = "11";
+        else if (card.rank === "R") num = "12";
+        else num = card.rank;
+        let suitInitial = "";
+        if (card.suit === "oros") suitInitial = "o";
+        else if (card.suit === "bastos") suitInitial = "b";
+        else if (card.suit === "copas") suitInitial = "c";
+        else if (card.suit === "espadas") suitInitial = "e";
+        img.src = "img/" + num + suitInitial + "-hd.png";
+      }
+      return img;
+    }
+
+    // Para la carta de triunfo.
+    function getCardImageSrc(card) {
+      let num;
+      if (card.rank === "S") num = "10";
+      else if (card.rank === "C") num = "11";
+      else if (card.rank === "R") num = "12";
+      else num = card.rank;
+      let suitInitial = "";
+      if (card.suit === "oros") suitInitial = "o";
+      else if (card.suit === "bastos") suitInitial = "b";
+      else if (card.suit === "copas") suitInitial = "c";
+      else if (card.suit === "espadas") suitInitial = "e";
+      return "img/" + num + suitInitial + "-hd.png";
+    }
+
+    // Actualiza la mano del jugador humano.
+    function updateHandsDisplay() {
+      let human = players.find(p => p.type === "human");
+      let handDiv = document.getElementById("player-2-hand");
+      handDiv.innerHTML = "";
+      human.hand.sort((a, b) => {
+        if (suitOrder[a.suit] !== suitOrder[b.suit]) {
+          return suitOrder[a.suit] - suitOrder[b.suit];
+        } else {
+          return getRankValue(b.rank) - getRankValue(a.rank);
+        }
+      });
+      for (let i = 0; i < human.hand.length; i++) {
+        let card = human.hand[i];
+        let cardEl = createCardElement(card, true);
+        cardEl.dataset.index = i;
+        if (currentPhase === "playing" && human.id === currentPlayer && isLegalPlay(human, card)) {
+          cardEl.classList.add("valid");
+        }
+        if (human.id === currentPlayer && currentPhase === "playing") {
+          cardEl.addEventListener("click", onHumanCardClick);
+        }
+        handDiv.appendChild(cardEl);
+      }
+    }
+
+    // Actualiza la info de cada jugador.
+    function updatePlayerInfo() {
+      players.forEach(p => {
+        let infoDiv;
+        if (p.type === "ai") {
+          if (p.position === "north") infoDiv = document.getElementById("info-north");
+          else if (p.position === "east") infoDiv = document.getElementById("info-east");
+          else if (p.position === "west") infoDiv = document.getElementById("info-west");
+        } else {
+          infoDiv = document.getElementById("info-south");
+        }
+        if (infoDiv) {
+          infoDiv.innerHTML = `
+            <div class="player-name">${p.name}</div>
+            <div class="player-score">${p.score}</div>
+            <div class="player-stats">
+              <div class="player-bid">${p.bid !== null ? p.bid : ""}</div>
+              <div class="player-tricks">${p.tricks}</div>
+            </div>
+          `;
+          infoDiv.style.borderColor = (p.id === dealer) ? "yellow" : "#fff";
+        }
+      });
+    }
+
+    // Actualiza el texto de ronda y posiciona la carta del triunfo.
+    function updateRoundInfo() {
+      let roundText = document.getElementById("round-text");
+      roundText.innerHTML = "R: " + (currentRoundIndex + 1) + " de " + rounds.length + "<br>B: " + handSize;
+      
+      let trumpCard = document.getElementById("trump-card");
+      trumpCard.style.backgroundImage = "url(" + getCardImageSrc(trump) + ")";
+      
+      // Determina la caja del dealer
+      let dealerBox = null;
+      if (dealer === 0) dealerBox = document.getElementById("info-north");
+      else if (dealer === 1) dealerBox = document.getElementById("info-east");
+      else if (dealer === 2) dealerBox = document.getElementById("info-south");
+      else if (dealer === 3) dealerBox = document.getElementById("info-west");
+      
+      if (dealerBox) {
+        let boxRect = dealerBox.getBoundingClientRect();
+        let containerRect = document.getElementById("bg-container").getBoundingClientRect();
+        let boxCenterX = boxRect.left + boxRect.width / 2 - containerRect.left;
+        let boxCenterY = boxRect.top + boxRect.height / 2 - containerRect.top;
+        trumpCard.style.left = (boxCenterX - 47) + "px";
+        // Para AI North el cálculo funcionaba bien; para E y W queremos usar el mismo cálculo que para N.
+        trumpCard.style.top = (boxCenterY - 40 - 70) + "px";
+      }
+    }
+
+    // Muestra el mensaje de ayuda. Si es turno del humano para apostar, se añade cuántas apuestas ya se han realizado.
+    function showMessage(text) {
+      if (text.indexOf("Tu turno para apostar") !== -1) {
+        text += " (ya se han realizado " + biddingIndex + " apuestas)";
+      }
+      document.getElementById("message").textContent = text;
+    }
+
+    function clearBidArea() {
+      document.getElementById("bid-area").innerHTML = "";
+    }
+
+    function clearTrickArea() {
+      document.getElementById("trick-area").innerHTML = "";
+    }
+
+    /***********************
+     * FUNCIONES AUXILIARES PARA LA IA
+     ***********************/
+    function cardBeats(cardA, cardB, ledSuit, trumpSuit) {
+      if (cardA.suit === cardB.suit) {
+        return getRankValue(cardA.rank) > getRankValue(cardB.rank);
+      }
+      if (cardA.suit === trumpSuit && cardB.suit !== trumpSuit) {
+        return true;
+      }
+      return false;
+    }
+
+    function aiSelectCard(player) {
+      let legalIndices = [];
+      for (let i = 0; i < player.hand.length; i++) {
+        if (isLegalPlay(player, player.hand[i])) {
+          legalIndices.push(i);
+        }
+      }
+      if (legalIndices.length === 0) legalIndices = player.hand.map((c, i) => i);
+      if (currentTrick.length === 0) {
+        let nonTrumpIndices = legalIndices.filter(i => player.hand[i].suit !== trumpSuit);
+        if (nonTrumpIndices.length > 0) {
+          let bestIndex = nonTrumpIndices[0];
+          for (let idx of nonTrumpIndices) {
+            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        } else {
+          let bestIndex = legalIndices[0];
+          for (let idx of legalIndices) {
+            if (getRankValue(player.hand[idx].rank) < getRankValue(player.hand[bestIndex].rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        }
+      } else {
+        let ledSuit = currentTrick[0].card.suit;
+        let currentWinning = currentTrick[0].card;
+        for (let i = 1; i < currentTrick.length; i++) {
+          let candidate = currentTrick[i].card;
+          if (cardBeats(candidate, currentWinning, ledSuit, trumpSuit)) {
+            currentWinning = candidate;
+          }
+        }
+        let winningCandidates = legalIndices.filter(i =>
+          cardBeats(player.hand[i], currentWinning, ledSuit, trumpSuit)
+        );
+        if (winningCandidates.length > 0) {
+          let bestIndex = winningCandidates[0];
+          for (let idx of winningCandidates) {
+            let candidate = player.hand[idx];
+            let bestCandidate = player.hand[bestIndex];
+            if (candidate.suit === bestCandidate.suit) {
+              if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
+                bestIndex = idx;
+              }
+            } else {
+              if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
+                bestIndex = idx;
+              }
+            }
+          }
+          return bestIndex;
+        } else {
+          let bestIndex = legalIndices[0];
+          for (let idx of legalIndices) {
+            let candidate = player.hand[idx];
+            let bestCandidate = player.hand[bestIndex];
+            if (candidate.suit !== trumpSuit && bestCandidate.suit === trumpSuit) {
+              bestIndex = idx;
+            } else if (getRankValue(candidate.rank) < getRankValue(bestCandidate.rank)) {
+              bestIndex = idx;
+            }
+          }
+          return bestIndex;
+        }
+      }
+    }
+
+    /***********************
+     * LÓGICA DEL JUEGO
+     ***********************/
+    function startRound() {
+      // Si es la primera ronda, elegir dealer al azar; luego, avanzar en sentido de las agujas del reloj (todos reparten)
+      if (currentRoundIndex === 0) {
+        dealer = Math.floor(Math.random() * players.length);
+      } else {
+        dealer = (dealer + 1) % players.length;
+      }
+      currentPhase = "bidding";
+      currentTrick = [];
+      biddingIndex = 0;
+      handSize = rounds[currentRoundIndex];
+      players.forEach(p => {
+        p.hand = [];
+        p.bid = null;
+        p.tricks = 0;
+      });
+      clearTrickArea();
+      clearBidArea();
+      deck = createDeck();
+      shuffle(deck);
+      for (let i = 0; i < handSize; i++) {
+        players.forEach(p => {
+          p.hand.push(deck.pop());
+        });
+      }
+      trump = deck.pop();
+      trumpSuit = trump.suit;
+      updateRoundInfo();
+      // Orden de juego: sentido de las agujas del reloj.
+      biddingOrder = [];
+      for (let i = 1; i <= players.length; i++) {
+        biddingOrder.push((dealer + i) % players.length);
+      }
+      updatePlayerInfo();
+      updateHandsDisplay();
+      showMessage("Trump: " + getSuitSymbol(trumpSuit) + " (" + trumpSuit + ")");
+      setTimeout(processNextBid, 1000);
+    }
+
+    function processNextBid() {
+      if (biddingIndex >= biddingOrder.length) {
+        currentPhase = "playing";
+        trickLeader = biddingOrder[0];
+        currentPlayer = trickLeader;
+        showMessage("Apuestas completas. " + players.find(p => p.id === currentPlayer).name + " lidera.");
+        updatePlayerInfo();
+        setTimeout(playTurn, 1000);
+        return;
+      }
+      let pid = biddingOrder[biddingIndex];
+      let p = players.find(p => p.id === pid);
+      if (p.type === "ai") {
+        let bid = aiComputeBid(pid);
+        p.bid = bid;
+        showMessage(p.name + " apuesta " + bid);
+        updatePlayerInfo();
+        biddingIndex++;
+        setTimeout(processNextBid, 1000);
+      } else {
+        showMessage("Tu turno para apostar. Ya se han realizado " + biddingIndex + " apuestas. Elige un número entre 0 y " + handSize + ".");
+        displayBidOptions();
+      }
+    }
+
+    function displayBidOptions() {
+      clearBidArea();
+      let bidArea = document.getElementById("bid-area");
+      for (let i = 0; i <= handSize; i++) {
+        let btn = document.createElement("button");
+        btn.textContent = i;
+        btn.classList.add("bid-button");
+        btn.addEventListener("click", function() {
+          players.find(p => p.type === "human").bid = i;
+          showMessage("Apuestas: " + i);
+          updatePlayerInfo();
+          clearBidArea();
+          biddingIndex++;
+          setTimeout(processNextBid, 500);
+        });
+        bidArea.appendChild(btn);
+      }
+    }
+
+    function aiComputeBid(pid) {
+      let p = players.find(p => p.id === pid);
+      let expectedTricks = 0;
+      for (let card of p.hand) {
+        if (card.suit === trumpSuit) {
+          expectedTricks += getRankValue(card.rank) / 12;
+        } else {
+          if (card.rank === "1" || card.rank === "3") {
+            expectedTricks += 0.5;
+          }
+        }
+      }
+      let bid = Math.round(expectedTricks + (Math.random() * 0.5 - 0.25));
+      if (bid < 0) bid = 0;
+      if (bid > handSize) bid = handSize;
+      return bid;
+    }
+
+    function isLegalPlay(player, card) {
+      if (currentTrick.length === 0) return true;
+      let ledSuit = currentTrick[0].card.suit;
+      let hasLedSuit = player.hand.some(c => c.suit === ledSuit);
+      if (hasLedSuit) {
+        return card.suit === ledSuit;
+      } else {
+        let hasTrump = player.hand.some(c => c.suit === trumpSuit);
+        return hasTrump ? card.suit === trumpSuit : true;
+      }
+    }
+
+    function onHumanCardClick(event) {
+      let index = parseInt(event.currentTarget.dataset.index);
+      let human = players.find(p => p.type === "human");
+      let card = human.hand[index];
+      if (!isLegalPlay(human, card)) {
+        showMessage("¡Debes seguir el palo o, si no lo tienes, tirar triunfo!");
+        return;
+      }
+      playCard(2, index);
+    }
+
+    function playCard(playerId, cardIndex) {
+      let player = players.find(p => p.id === playerId);
+      let card = player.hand.splice(cardIndex, 1)[0];
+      let cardEl = createCardElement(card, true);
+      cardEl.classList.add("played-card");
+      let pos = "";
+      switch (player.position) {
+        case "north": pos = "top: 10px; left: 128px;"; break;
+        case "south": pos = "bottom: 10px; left: 128px;"; break;
+        case "east":  pos = "right: 10px; top: 105px;"; break;
+        case "west":  pos = "left: 10px; top: 105px;"; break;
+      }
+      cardEl.style.cssText += pos;
+      document.getElementById("trick-area").appendChild(cardEl);
+      currentTrick.push({ playerId, card, element: cardEl });
+      updateHandsDisplay();
+      updateWinningCardHighlight();
+      if (currentTrick.length === players.length) {
+        setTimeout(determineTrickWinner, 1000);
+      } else {
+        currentPlayer = (playerId + 1) % players.length;
+        while (players.find(p => p.id === currentPlayer).hand.length === 0) {
+          currentPlayer = (currentPlayer + 1) % players.length;
+        }
+        setTimeout(playTurn, 500);
+      }
+    }
+
+    function playTurn() {
+      updateHandsDisplay();
+      let p = players.find(p => p.id === currentPlayer);
+      if (p.type === "ai") {
+        showMessage(p.name + " está jugando...");
+        setTimeout(function() {
+          let choice = aiSelectCard(p);
+          playCard(currentPlayer, choice);
+        }, 1000);
+      } else {
+        showMessage("Tu turno. Haz clic en una carta resaltada.");
+        updateHandsDisplay();
+      }
+    }
+
+    function determineTrickWinner() {
+      let ledSuit = currentTrick[0].card.suit;
+      let winningCard = null;
+      let winner = null;
+      let trumps = currentTrick.filter(t => t.card.suit === trumpSuit);
+      if (trumps.length > 0) {
+        winningCard = trumps.reduce((prev, cur) =>
+          getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+        );
+      } else {
+        let ledCards = currentTrick.filter(t => t.card.suit === ledSuit);
+        winningCard = ledCards.reduce((prev, cur) =>
+          getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+        );
+      }
+      winner = winningCard.playerId;
+      players.find(p => p.id === winner).tricks++;
+      updatePlayerInfo();
+      showMessage(players.find(p => p.id === winner).name + " gana la baza.");
+      animateTrickCards(winner);
+    }
+
+    function updateWinningCardHighlight() {
+      if (currentTrick.length === 0) return;
+      let ledSuit = currentTrick[0].card.suit;
+      let winningItem = null;
+      let trumpItems = currentTrick.filter(item => item.card.suit === trumpSuit);
+      if (trumpItems.length > 0) {
+        winningItem = trumpItems.reduce((prev, cur) =>
+          getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+        );
+      } else {
+        let ledItems = currentTrick.filter(item => item.card.suit === ledSuit);
+        if (ledItems.length > 0) {
+          winningItem = ledItems.reduce((prev, cur) =>
+            getRankValue(cur.card.rank) > getRankValue(prev.card.rank) ? cur : prev
+          );
+        }
+      }
+      currentTrick.forEach(item => item.element.classList.remove("winning-card"));
+      if (winningItem) {
+        winningItem.element.classList.add("winning-card");
+      }
+    }
+
+    function animateTrickCards(winner) {
+      let direction = "";
+      let pos = players.find(p => p.id === winner).position;
+      if (pos === "north") {
+        direction = "translateY(-100%)";
+      } else if (pos === "south") {
+        direction = "translateY(100%)";
+      } else if (pos === "east") {
+        direction = "translateX(100%)";
+      } else if (pos === "west") {
+        direction = "translateX(-100%)";
+      }
+      currentTrick.forEach(item => {
+        let el = item.element;
+        el.style.transition = "all 0.5s ease-out";
+        el.style.transform = direction;
+        el.style.opacity = "0";
+      });
+      setTimeout(() => {
+        clearTrickArea();
+        currentTrick = [];
+        currentPlayer = winner;
+        if (players.find(p => p.id === 0).hand.length > 0) {
+          setTimeout(playTurn, 500);
+        } else {
+          endRound();
+        }
+      }, 600);
+    }
+
+    function endRound() {
+      players.forEach(p => {
+        if (p.bid === p.tricks) {
+          p.score += (10 + 3 * p.tricks);
+        } else {
+          p.score -= 3 * Math.abs(p.tricks - p.bid);
+        }
+      });
+      let roundResult = { round: currentRoundIndex + 1, handSize: handSize, results: [] };
+      players.forEach(p => {
+        let roundPoints = (p.bid === p.tricks) ? (10 + 3 * p.tricks) : (-3 * Math.abs(p.tricks - p.bid));
+        roundResult.results.push({ roundPoints: roundPoints, total: p.score });
+      });
+      scoreData.push(roundResult);
+      updatePlayerInfo();
+      let summary = "Ronda finalizada. ";
+      players.forEach(p => {
+        summary += p.name + " apostó " + p.bid + " y consiguió " + p.tricks + " baza" + (p.tricks !== 1 ? "s" : "") + ". ";
+      });
+      showMessage(summary);
+      if (currentRoundIndex < rounds.length - 1) {
+        currentRoundIndex++;
+        setTimeout(startRound, 2000);
+      } else {
+        showScoreboard();
+      }
+    }
+
+    /***********************
+     * TABLA DE PUNTUACIÓN
+     ***********************/
+    function showScoreboard() {
+      let contentDiv = document.getElementById("scoreboard-content");
+      contentDiv.innerHTML = "";
+      let table = document.createElement("table");
+      table.id = "scoreboard-table";
+      table.style.borderCollapse = "collapse";
+      // Orden: Ronda, AI West, AI North, AI East, Tú
+      let scoreboardOrder = [];
+      scoreboardOrder.push(players.find(p => p.position === "west"));
+      scoreboardOrder.push(players.find(p => p.position === "north"));
+      scoreboardOrder.push(players.find(p => p.position === "east"));
+      scoreboardOrder.push(players.find(p => p.type === "human"));
+      
+      let thead = document.createElement("thead");
+      let headerRow1 = document.createElement("tr");
+      let thRonda = document.createElement("th");
+      thRonda.colSpan = 2;
+      thRonda.textContent = "Ronda";
+      thRonda.classList.add("main-column");
+      headerRow1.appendChild(thRonda);
+      scoreboardOrder.forEach((p, index) => {
+        let thPlayer = document.createElement("th");
+        thPlayer.colSpan = 2;
+        thPlayer.textContent = p.name;
+        if (index < scoreboardOrder.length - 1) {
+          thPlayer.classList.add("main-column");
+        }
+        headerRow1.appendChild(thPlayer);
+      });
+      thead.appendChild(headerRow1);
+      let headerRow2 = document.createElement("tr");
+      let thRoundNum = document.createElement("th");
+      thRoundNum.textContent = "Número";
+      headerRow2.appendChild(thRoundNum);
+      let thHand = document.createElement("th");
+      thHand.textContent = "Cartas";
+      headerRow2.appendChild(thHand);
+      scoreboardOrder.forEach(() => {
+        let thPoints = document.createElement("th");
+        thPoints.textContent = "Puntos";
+        headerRow2.appendChild(thPoints);
+        let thTotal = document.createElement("th");
+        thTotal.textContent = "Total";
+        headerRow2.appendChild(thTotal);
+      });
+      thead.appendChild(headerRow2);
+      table.appendChild(thead);
+      let tbody = document.createElement("tbody");
+      for (let i = 1; i <= 16; i++) {
+        let tr = document.createElement("tr");
+        if (i === 4 || i === 12) {
+          tr.classList.add("separator");
+        }
+        let tdRound = document.createElement("td");
+        tdRound.textContent = i;
+        tr.appendChild(tdRound);
+        let tdHand = document.createElement("td");
+        if (scoreData[i - 1]) {
+          tdHand.textContent = scoreData[i - 1].handSize;
+        } else {
+          tdHand.textContent = "";
+        }
+        tr.appendChild(tdHand);
+        scoreboardOrder.forEach((p) => {
+          let tdPoints = document.createElement("td");
+          let tdTotal = document.createElement("td");
+          if (scoreData[i - 1]) {
+            let playerIndex = players.indexOf(p);
+            let res = scoreData[i - 1].results[playerIndex];
+            tdPoints.textContent = res.roundPoints;
+            tdTotal.textContent = res.total;
+            if (res.roundPoints < 0) {
+              tdPoints.style.color = "red";
+            }
+            if (res.total < 0) {
+              tdTotal.style.color = "red";
+            }
+          } else {
+            tdPoints.textContent = "";
+            tdTotal.textContent = "";
+          }
+          tr.appendChild(tdPoints);
+          tr.appendChild(tdTotal);
+        });
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      contentDiv.appendChild(table);
+      document.getElementById("scoreboard-overlay").style.display = "block";
+    }
+
+    function hideScoreboard() {
+      document.getElementById("scoreboard-overlay").style.display = "none";
+    }
+
+    /***********************
+     * EVENTOS DEL SCOREBOARD
+     ***********************/
+    document.getElementById("scoreboard-button").addEventListener("click", showScoreboard);
+    document.getElementById("scoreboard-close").addEventListener("click", hideScoreboard);
+
+    /***********************
+     * INICIO DEL JUEGO (Nueva Partida)
+     ***********************/
+    document.getElementById("new-game").addEventListener("click", function() {
+      currentRoundIndex = 0;
+      players.forEach(p => p.score = 0);
+      scoreData = [];
+      assignAINames();
+      startRound();
+    });
+
+    /***********************
+     * INICIO DEL JUEGO
+     ***********************/
+    startRound();
+  </script>
+</body>
+</html>
