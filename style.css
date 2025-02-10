@@ -1,0 +1,264 @@
+/* RESET BÁSICO */
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  
+  /* Fondo y estilos generales */
+  body {
+    background: #0b2a0f;
+    font-family: sans-serif;
+    color: #fff;
+    position: relative;
+  }
+  
+/* Estilos para el overlay del log */
+#sim-log {
+    position: fixed;  /* Usamos fixed para que siempre esté en la pantalla */
+    top: 0;
+    left: 0;
+    width: 300px;
+    height: 100vh;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.8);
+    padding: 10px;
+    font-size: 12px;
+    color: #fff;
+    z-index: 60;
+    display: none;  /* Inicialmente oculto */
+  }
+  
+  /* Botón de cierre del log */
+  #sim-log-close {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    color: #fff;
+  }
+  
+  /* Contenedor principal del juego */
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  
+  /* Contenedor de imagen de background (se asume 960x640 px) */
+  #bg-container {
+    position: absolute;
+    width: 960px;
+    height: 640px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+  }
+  #bg-container img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  
+  /* Botones “Nueva Partida” y “Puntuación” */
+  #new-game, #scoreboard-button {
+    position: absolute;
+    padding: 10px 20px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    z-index: 30;
+    background-color: #bfb182;
+    color: #fff;
+  }
+  #new-game { top: 10px; left: 10px; }
+  #scoreboard-button { top: 10px; right: 10px; }
+  #new-game:hover, #scoreboard-button:hover { background-color: #6f683a; }
+  #new-game:active, #scoreboard-button:active { transform: scale(0.98); }
+  
+  /* Eliminamos botón de reinicio (avance automático) */
+  #restart { display: none; }
+  
+  /* Botones para apostar (selectores de bazas) */
+  .bid-button {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    font-size: 20px;
+    margin: 5px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    background-color: #bfb182;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+  .bid-button:hover { background-color: #6f683a; }
+  .bid-button:active { transform: scale(0.98); }
+  
+  /* Contenedor de apuestas para el jugador humano */
+  #bid-area {
+    position: absolute;
+    bottom: 175px; /* 20 + 140 + 15 */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+  }
+  
+  /* Texto de ronda y mensajes */
+  #round-text {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    font-size: 18px;
+    color: #fff;
+    z-index: 30;
+  }
+  #message {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 5px;
+    z-index: 40;
+    text-align: center;
+    max-height: 100px;
+    overflow-y: auto;
+  }
+  
+  /* Cajas de info para jugadores */
+  .player-info {
+    width: 150px;
+    border: 5px solid #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    text-align: center;
+    font-family: sans-serif;
+    position: absolute;
+    z-index: 20;
+  }
+  /* Posiciones de las cajas de info para IA */
+  #info-north { top: 20px; left: calc(50% - 75px); }
+  #info-east { top: 50%; right: 20px; transform: translateY(-50%); }
+  #info-west { top: 50%; left: 20px; transform: translateY(-50%); }
+  /* Caja de info para el jugador humano */
+  #info-south { position: absolute; width: 150px; right: 10px; bottom: 10px; z-index: 20; border: 5px solid #fff; border-radius: 10px; }
+  
+  /* Estructura interna de las cajas de info */
+  .player-name {
+    background-color: #444;
+    color: #fff;
+    padding: 5px;
+    font-size: 14px;
+  }
+  .player-score {
+    background-color: #000;
+    color: #fff;
+    padding: 5px;
+    font-size: 28px;
+  }
+  .player-stats { display: flex; }
+  .player-bid, .player-tricks {
+    flex: 1;
+    padding: 5px;
+    font-size: 16px;
+  }
+  .player-bid { background-color: #d3d3d3; color: #000; }
+  .player-tricks { background-color: #444; color: #fff; }
+  
+  /* Estilos específicos para la caja del jugador humano */
+  #info-south .player-name { background-color: #6f683a; font-size: 16px; }
+  #info-south .player-score { background-color: #beaf84; font-size: 28px; }
+  #info-south .player-bid { background-color: #b5a16c; font-size: 16px; }
+  #info-south .player-tricks { background-color: #6f683a; font-size: 16px; }
+  
+  /* Zona de cartas del jugador humano */
+  #player-2-hand {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
+  }
+  
+  /* Tapete para cartas jugadas */
+  #trick-area {
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: transparent;
+    border: none;
+    border-radius: 10px;
+    overflow: hidden;
+    z-index: 10;
+  }
+  
+  /* Carta de triunfo (se posiciona detrás de la caja del jugador activo) */
+  #trump-card {
+    position: absolute;
+    width: 94px;
+    height: 140px;
+    background-size: cover;
+    z-index: 15;
+  }
+  
+  /* Tabla de puntuación */
+  #scoreboard-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.95);
+    color: black;
+    font-family: "Courier New", monospace;
+    padding: 20px;
+    border: 2px solid #000;
+    z-index: 50;
+    max-height: 90vh;
+    overflow: auto;
+  }
+  #scoreboard-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  #scoreboard-table th, #scoreboard-table td {
+    border: 1px solid black;
+    padding: 5px;
+    text-align: center;
+  }
+  .main-column { border-right: 2px solid black; }
+  .separator { border-bottom: 2px solid black; }
+  #scoreboard-close {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 18px;
+  }
+  
+  /* Transiciones en las cartas */
+  .card {
+    width: 94px;
+    height: 140px;
+    margin: 3px 5px;
+    transition: all 0.3s ease;
+  }
+  .played-card {
+    position: absolute;
+    width: 94px;
+    height: 140px;
+    z-index: 5;
+    transition: all 0.5s ease-out;
+  }
+  .card.valid { filter: drop-shadow(0 0 15px yellow); }
+  .winning-card { filter: drop-shadow(0 0 15px gold); }
+  
