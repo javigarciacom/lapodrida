@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Rescate Espacial con Dragón, Puntuación y Banda Sonora</title>
+  <style>
+    /* Estilos básicos */
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+    }
+    canvas {
+      display: block;
+      background: #000;
+    }
+    /* Información en esquina superior izquierda */
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-size: 18px;
+      z-index: 20;
+    }
+    /* Marcador en esquina superior derecha */
+    #scoreboard {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: #fff;
+      font-size: 18px;
+      z-index: 20;
+      text-align: right;
+    }
+    /* Pantalla de inicio */
+    #startScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: rgba(0,0,0,0.7);
+      z-index: 30;
+    }
+    #startScreen button {
+      font-size: 24px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    /* Pantalla de Game Over */
+    #gameOverScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: rgba(0,0,0,0.7);
+      z-index: 30;
+    }
+    #gameOverScreen h1 {
+      color: white;
+      font-size: 60px;
+      margin: 20px;
+      text-align: center;
+    }
+    #restartButton {
+      font-size: 24px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Elemento de audio para la banda sonora 8-bit retro -->
+  <audio id="bgMusic" loop preload="auto">
+    <source src="retro8bit.mp3" type="audio/mpeg">
+    Tu navegador no soporta el elemento de audio.
+  </audio>
+  
+  <canvas id="gameCanvas"></canvas>
+  <div id="info"></div>
+  <div id="scoreboard"></div>
+  
+  <!-- Pantalla de inicio -->
+  <div id="startScreen">
+    <button id="startButton">Jugar</button>
+  </div>
+  
+  <!-- Pantalla de Game Over -->
+  <div id="gameOverScreen">
+    <h1>Game Over</h1>
+    <button id="restartButton">Restart</button>
+    <div id="newHigh" style="color: yellow; font-size: 32px; margin-top:20px;"></div>
+  </div>
+  
+  <script>
+    // CONFIGURACIÓN DEL CANVAS Y VARIABLES GLOBALES
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Dimensiones del mundo (scroll vertical)
+    const worldHeight = 3000;  // Altura total del nivel
+    const doorWidth = 100, doorHeight = 20;
+    const bottomDoor = {
+      x: canvas.width / 2 - doorWidth / 2,
+      y: worldHeight - 100,
+      width: doorWidth,
+      height: doorHeight
+    };
+    const topDoor = {
+      x: canvas.width / 2 - doorWidth / 2,
+      y: 20,
+      width: doorWidth,
+      height: doorHeight
+    };
+
+    // Estados del juego
+    let level = 1;           
+    let gameState = "waiting";  // "waiting" hasta que se pulse "Jugar", luego "playing", "gameOver", etc.
+    let startTime = Date.now();
+    const timeLimit = 40;    // Duración máxima de nivel (para bonus de tiempo); a los 30 s aparece el dragón
+
+    // Variables de puntuación y high score
+    let score = 0;
+    let highScore = parseInt(getCookie("highScore")) || 0;
+    let newHighScoreAchieved = false;
+    let gameOverProcessed = false; // Para procesar Game Over una sola vez
+
+    // Array para fuegos artificiales
+    let fireworks = [];
+
+    // Estrellas de fondo
+    let stars = [];
+    function initStars() {
+      stars = [];
+      const numStars = 200;
+      for (let i = 0; i < numStars; i++) {
+        stars.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * worldHeight,
+          size: 1 + Math.random() * 2,
+          alpha: 0.5 + Math.random() * 0.5
+        });
+      }
+    }
+    initStars();
+
+    // Parámetros del dragón
+    const dragonScale = 10;       
+    const dragonTipDistance = 24 * dragonScale;  
+    const dragonBaseOffset = 8 * dragonScale;      
+
+    // Teclas de control
+    const keys = { left: false, right: false, up: false, space: false };
+
+    /* 
+      La nave se representa como un triángulo isósceles.
+      Su posición (x, y) corresponde a la base (donde están los motores).
+      La punta (de disparo) está en (0, -tipDistance) en el sistema local.
+      Con spaceship.angle == 0, la nave aparece vertical (punta hacia arriba).
+      Al presionar ↑, se aplica empuje en dirección al pico.
+    */
+    const tipDistance = 24;
+    const spaceship = {
+      x: canvas.width / 2,
+      y: bottomDoor.y + 50,
+      angle: 0,
+      vx: 0,
+      vy: 0,
+      thrusting: false,
+      collisionRadius: 10,
+      shootCooldown: 0
+    };
+
+    // Parámetros de disparo
+    const bullets = [];
+    const bulletSpeed = 8;
+    const bulletLife = 1000;
+
+    // Astronautas encerrados en jaulas triangulares
+    let astronauts = [];
+    function createAstronaut(x, y) {
+      const side = 60;
+      const height = side * Math.sqrt(3) / 2;
+      const relVertices = [
+        { x: -side / 2, y: height / 3 },
+        { x: side / 2, y: height / 3 },
+        { x: 0, y: -2 * height / 3 }
+      ];
+      const balls = relVertices.map(rel => ({
+        offsetX: rel.x,
+        offsetY: rel.y,
+        hit: false,
+        radius: 8
+      }));
+      return { x, y, free: false, rescued: false, relVertices, balls };
+    }
+    function generateAstronauts() {
+      astronauts = [];
+      for (let i = 0; i < level; i++) {
+        const posY = topDoor.y + 100 + Math.random() * (bottomDoor.y - topDoor.y - 200);
+        const posX = 50 + Math.random() * (canvas.width - 100);
+        astronauts.push(createAstronaut(posX, posY));
+      }
+    }
+    function resetLevel() {
+      gameState = "playing";
+      startTime = Date.now();
+      dragon = null;
+      spaceship.x = canvas.width / 2;
+      spaceship.y = bottomDoor.y + 50;
+      spaceship.vx = 0;
+      spaceship.vy = 0;
+      spaceship.angle = 0;
+      spaceship.shootCooldown = 0;
+      bullets.length = 0;
+      generateAstronauts();
+    }
+    let dragon = null;
+
+    // EVENTOS DE TECLADO
+    window.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft") keys.left = true;
+      if (e.key === "ArrowRight") keys.right = true;
+      if (e.key === "ArrowUp") keys.up = true;
+      if (e.key === " ") keys.space = true;
+    });
+    window.addEventListener("keyup", e => {
+      if (e.key === "ArrowLeft") keys.left = false;
+      if (e.key === "ArrowRight") keys.right = false;
+      if (e.key === "ArrowUp") keys.up = false;
+      if (e.key === " ") keys.space = false;
+    });
+
+    // Inicia la banda sonora tras la interacción (además del botón "Jugar")
+    document.body.addEventListener("click", () => {
+      const bgMusic = document.getElementById("bgMusic");
+      if (bgMusic.paused) bgMusic.play();
+    });
+
+    // EVENTO DEL BOTÓN "JUGAR" PARA EMPEZAR LA PARTIDA
+    document.getElementById("startButton").addEventListener("click", () => {
+      document.getElementById("startScreen").style.display = "none";
+      resetLevel();
+      gameState = "playing";
+    });
+
+    // FÍSICA Y ACTUALIZACIÓN
+    const thrustPower = 0.15;
+    const rotationSpeed = 0.06;
+    function update(delta) {
+      if (gameState !== "playing") {
+        if (gameState === "gameOver") updateFireworks(delta);
+        return;
+      }
+      if (keys.left) spaceship.angle -= rotationSpeed;
+      if (keys.right) spaceship.angle += rotationSpeed;
+      if (keys.up) {
+        spaceship.thrusting = true;
+        spaceship.vx += Math.sin(spaceship.angle) * thrustPower;
+        spaceship.vy += -Math.cos(spaceship.angle) * thrustPower;
+      } else {
+        spaceship.thrusting = false;
+      }
+      spaceship.x += spaceship.vx;
+      spaceship.y += spaceship.vy;
+      spaceship.vx *= 0.99;
+      spaceship.vy *= 0.99;
+      if (spaceship.x < 0) spaceship.x = 0;
+      if (spaceship.x > canvas.width) spaceship.x = canvas.width;
+      if (spaceship.y < 0) spaceship.y = 0;
+      if (spaceship.y > worldHeight) spaceship.y = worldHeight;
+      if (keys.space && spaceship.shootCooldown <= 0) {
+        shootBullet();
+        spaceship.shootCooldown = 300;
+      }
+      if (spaceship.shootCooldown > 0) spaceship.shootCooldown -= delta;
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+        b.life -= delta;
+        if (b.life <= 0) { bullets.splice(i, 1); continue; }
+        astronauts.forEach(ast => {
+          if (!ast.free) {
+            ast.balls.forEach(ball => {
+              if (!ball.hit && distance(b.x, b.y, ast.x + ball.offsetX, ast.y + ball.offsetY) < ball.radius + 3) {
+                ball.hit = true;
+                bullets.splice(i, 1);
+              }
+            });
+            if (ast.balls.every(ball => ball.hit)) {
+              ast.free = true;
+            }
+          }
+        });
+      }
+      astronauts.forEach(ast => {
+        if (ast.free && !ast.rescued && distance(spaceship.x, spaceship.y, ast.x, ast.y) < spaceship.collisionRadius + 15) {
+          ast.rescued = true;
+          score += 10;
+        }
+      });
+      const allRescued = astronauts.every(ast => ast.rescued);
+      if (allRescued && pointInRect(spaceship.x, spaceship.y, topDoor)) {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const timeBonus = Math.max(0, Math.floor(40 - elapsed)) * 10;
+        score += 100 + timeBonus;
+        gameState = "levelComplete";
+        setTimeout(() => { level++; resetLevel(); }, 1500);
+      }
+      const elapsed = (Date.now() - startTime) / 1000;
+      if (elapsed >= 30 && !dragon) {
+        dragon = { x: canvas.width / 2, y: worldHeight + 50, vy: -300 / 1000 };
+      }
+      if (dragon) {
+        dragon.y += dragon.vy * delta;
+        dragon.x += (spaceship.x - dragon.x) * 0.02;
+        const dragonCollisionRadius = spaceship.collisionRadius * dragonScale;
+        if (distance(dragon.x, dragon.y, spaceship.x, spaceship.y) < (dragonCollisionRadius + spaceship.collisionRadius) ||
+            dragon.y <= spaceship.y) {
+          gameState = "gameOver";
+        }
+      }
+    }
+    function updateFireworks(delta) {
+      for (let i = fireworks.length - 1; i >= 0; i--) {
+        let p = fireworks[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= delta;
+        if (p.life <= 0) fireworks.splice(i, 1);
+      }
+    }
+    function drawFireworks() {
+      fireworks.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(p.life / 2000, 0);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+    }
+    function distance(x1, y1, x2, y2) {
+      return Math.hypot(x2 - x1, y2 - y1);
+    }
+    function pointInRect(x, y, rect) {
+      return x >= rect.x && x <= rect.x + rect.width &&
+             y >= rect.y && y <= rect.y + rect.height;
+    }
+    function shootBullet() {
+      const tipX = spaceship.x + Math.sin(spaceship.angle) * tipDistance;
+      const tipY = spaceship.y - Math.cos(spaceship.angle) * tipDistance;
+      const bullet = {
+        x: tipX,
+        y: tipY,
+        vx: spaceship.vx + Math.sin(spaceship.angle) * bulletSpeed,
+        vy: spaceship.vy - Math.cos(spaceship.angle) * bulletSpeed,
+        life: bulletLife
+      };
+      bullets.push(bullet);
+    }
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return "";
+    }
+    function setCookie(name, value, days) {
+      const d = new Date();
+      d.setTime(d.getTime() + (days*24*60*60*1000));
+      document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`;
+    }
+    function draw() {
+      let cameraY = spaceship.y - canvas.height / 2;
+      if (cameraY < 0) cameraY = 0;
+      if (cameraY > worldHeight - canvas.height) cameraY = worldHeight - canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      stars.forEach(star => {
+        if (star.y >= cameraY && star.y <= cameraY + canvas.height) {
+          ctx.globalAlpha = star.alpha;
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(star.x, star.y - cameraY, star.size, star.size);
+          ctx.globalAlpha = 1;
+        }
+      });
+      ctx.save();
+      ctx.translate(0, -cameraY);
+      ctx.fillStyle = "#555";
+      ctx.fillRect(topDoor.x, topDoor.y, topDoor.width, topDoor.height);
+      ctx.fillRect(bottomDoor.x, bottomDoor.y, bottomDoor.width, bottomDoor.height);
+      astronauts.forEach(ast => {
+        if (!ast.free) {
+          ctx.strokeStyle = "#0f0";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ast.relVertices.forEach((v, i) => {
+            const vx = ast.x + v.x;
+            const vy = ast.y + v.y;
+            if (i === 0) ctx.moveTo(vx, vy);
+            else ctx.lineTo(vx, vy);
+          });
+          ctx.closePath();
+          ctx.stroke();
+          ast.balls.forEach(ball => {
+            if (!ball.hit) {
+              ctx.fillStyle = "#f00";
+              ctx.beginPath();
+              ctx.arc(ast.x + ball.offsetX, ast.y + ball.offsetY, ball.radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          });
+        } else if (ast.free && !ast.rescued) {
+          ctx.fillStyle = "#ff0";
+          ctx.beginPath();
+          ctx.arc(ast.x, ast.y, 12, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+      ctx.fillStyle = "#fff";
+      bullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.save();
+      ctx.translate(spaceship.x, spaceship.y);
+      ctx.rotate(spaceship.angle);
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.moveTo(0, -tipDistance);
+      ctx.lineTo(8, 0);
+      ctx.lineTo(-8, 0);
+      ctx.closePath();
+      ctx.fill();
+      if (spaceship.thrusting) {
+        ctx.fillStyle = "orange";
+        ctx.beginPath();
+        ctx.moveTo(0, 8);
+        ctx.lineTo(4, 0);
+        ctx.lineTo(-4, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      if (dragon) {
+        ctx.save();
+        ctx.translate(dragon.x, dragon.y);
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.moveTo(0, -dragonTipDistance);
+        ctx.lineTo(dragonBaseOffset, 0);
+        ctx.lineTo(-dragonBaseOffset, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "orange";
+        ctx.beginPath();
+        ctx.moveTo(dragonBaseOffset, -dragonTipDistance/2);
+        ctx.lineTo(dragonBaseOffset + 40, -dragonTipDistance/2 - 20);
+        ctx.lineTo(dragonBaseOffset, -dragonTipDistance/2 - 60);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-dragonBaseOffset, -dragonTipDistance/2);
+        ctx.lineTo(-dragonBaseOffset - 40, -dragonTipDistance/2 - 20);
+        ctx.lineTo(-dragonBaseOffset, -dragonTipDistance/2 - 60);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      if (gameState === "gameOver" && newHighScoreAchieved) {
+        drawFireworks();
+      }
+      ctx.restore();
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      document.getElementById("info").innerHTML =
+        `Nivel: ${level} | Tiempo: ${elapsed}s | Rescatados: ${astronauts.filter(a => a.rescued).length} / ${astronauts.length}`;
+      document.getElementById("scoreboard").innerHTML =
+        `Score: ${score}<br>High Score: ${highScore}`;
+    }
+    let lastTime = Date.now();
+    function gameLoop() {
+      const now = Date.now();
+      const delta = now - lastTime;
+      lastTime = now;
+      update(delta);
+      draw();
+      if (gameState === "gameOver" && !gameOverProcessed) {
+        gameOverProcessed = true;
+        if (score > highScore) {
+          newHighScoreAchieved = true;
+          highScore = score;
+          setCookie("highScore", highScore, 365);
+          spawnFireworks();
+          document.getElementById("newHigh").innerHTML = "¡Nuevo Récord!";
+        } else {
+          document.getElementById("newHigh").innerHTML = "";
+        }
+        document.getElementById("gameOverScreen").style.display = "flex";
+      }
+      requestAnimationFrame(gameLoop);
+    }
+    // INICIAR GAME LOOP (se ejecuta siempre; la partida avanza sólo si gameState === "playing")
+    resetLevel();
+    gameLoop();
+
+    document.getElementById("restartButton").addEventListener("click", () => {
+      score = 0;
+      gameOverProcessed = false;
+      newHighScoreAchieved = false;
+      fireworks = [];
+      document.getElementById("gameOverScreen").style.display = "none";
+      resetLevel();
+      gameState = "playing";
+    });
+
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+    function spawnFireworks() {
+      for (let i = 0; i < 100; i++) {
+        fireworks.push({
+          x: canvas.width/2 + (Math.random()-0.5)*200,
+          y: canvas.height/2 + (Math.random()-0.5)*200,
+          vx: (Math.random()-0.5)*4,
+          vy: (Math.random()-0.5)*4,
+          life: 1000 + Math.random()*1000,
+          color: "hsl(" + Math.floor(Math.random()*360) + ", 100%, 50%)"
+        });
+      }
+    }
+    </script>
+</body>
+</html>
