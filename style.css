@@ -1,0 +1,420 @@
+/* ══════════════════════════════════════════════════════════
+   LA PODRIDA — RESPONSIVE CARD GAME
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Variables ─────────────────────────────────────────── */
+:root {
+  --card-w: 94px;
+  --card-h: 140px;
+  --info-w: 140px;
+  --info-fs-name: 13px;
+  --info-fs-score: 26px;
+  --info-fs-stat: 14px;
+  --felt-light: #1a6b2a;
+  --felt-mid:   #0e4a1a;
+  --felt-dark:  #072a0e;
+  --gold:       #c5a040;
+  --gold-dark:  #8a7030;
+  --red:        #b22222;
+  --active:     #ffd700;
+  --trick-size: min(48vw, 48vh, 350px);
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --card-w: 78px; --card-h: 116px;
+    --info-w: 120px;
+    --info-fs-name: 12px; --info-fs-score: 22px; --info-fs-stat: 12px;
+  }
+}
+@media (max-width: 768px) {
+  :root {
+    --card-w: 65px; --card-h: 97px;
+    --info-w: 100px; --trick-size: min(52vw, 40vh, 280px);
+    --info-fs-name: 11px; --info-fs-score: 18px; --info-fs-stat: 11px;
+  }
+}
+@media (max-width: 480px) {
+  :root {
+    --card-w: 56px; --card-h: 83px;
+    --info-w: 82px; --trick-size: min(60vw, 36vh, 220px);
+    --info-fs-name: 10px; --info-fs-score: 15px; --info-fs-stat: 10px;
+  }
+}
+
+/* ── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Inter', sans-serif;
+  color: #fff;
+  background: radial-gradient(ellipse at 50% 42%, var(--felt-light) 0%, var(--felt-mid) 40%, var(--felt-dark) 80%, #031808 100%);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ══════════════════════════════════════════════════════════
+   DIFFICULTY MODAL
+   ══════════════════════════════════════════════════════════ */
+#difficulty-modal {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(3, 15, 5, 0.85);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px);
+}
+#difficulty-modal.hidden { display: none; }
+.dm-box {
+  background: linear-gradient(145deg, #0e3e16 0%, #0a2a0f 100%);
+  border: 2px solid var(--gold-dark);
+  border-radius: 20px;
+  padding: 36px 32px 30px;
+  max-width: 420px; width: 92%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.dm-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(26px, 6vw, 38px);
+  font-weight: 900; color: var(--gold);
+  letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  margin-bottom: 4px;
+}
+.dm-subtitle {
+  font-size: 13px; color: rgba(255,255,255,0.45);
+  font-weight: 500; margin-bottom: 24px;
+}
+.dm-label {
+  font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.5);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px;
+}
+.dm-options { display: flex; gap: 10px; }
+.dm-btn {
+  flex: 1; border: 2px solid rgba(255,255,255,0.12);
+  border-radius: 12px; padding: 16px 8px;
+  background: rgba(255,255,255,0.04);
+  cursor: pointer; transition: all 0.2s;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  color: #fff;
+}
+.dm-btn:hover { border-color: var(--gold); background: rgba(197,160,64,0.1); transform: translateY(-2px); }
+.dm-btn:active { transform: scale(0.97); }
+.dm-btn-icon { font-size: 28px; line-height: 1; }
+.dm-btn-name { font-size: 15px; font-weight: 700; }
+.dm-btn-desc { font-size: 10px; color: rgba(255,255,255,0.4); line-height: 1.3; }
+.dm-easy .dm-btn-icon  { color: #4caf50; }
+.dm-medium .dm-btn-icon { color: var(--gold); }
+.dm-hard .dm-btn-icon   { color: #e53935; }
+
+@media (max-width: 360px) {
+  .dm-options { flex-direction: column; }
+  .dm-btn { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 12px 16px; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   GAME LAYOUT
+   ══════════════════════════════════════════════════════════ */
+#game {
+  width: 100vw; height: 100vh; height: 100dvh;
+  position: relative; overflow: hidden;
+  display: none; /* shown after difficulty pick */
+}
+
+/* ── Top bar ───────────────────────────────────────────── */
+#top-bar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; z-index: 40;
+}
+#new-game, #scoreboard-button {
+  padding: 7px 14px; font-size: 12px; font-weight: 700;
+  border: none; border-radius: 6px; cursor: pointer;
+  background: var(--gold-dark); color: #fff;
+  transition: background 0.2s, transform 0.15s;
+  white-space: nowrap; flex-shrink: 0;
+}
+#new-game:hover, #scoreboard-button:hover { background: var(--gold); color: #1a1a1a; }
+#new-game:active, #scoreboard-button:active { transform: scale(0.96); }
+#message {
+  flex: 1; text-align: center;
+  font-size: clamp(11px, 2.5vw, 14px); font-weight: 600;
+  background: rgba(0,0,0,0.45); border-radius: 6px;
+  padding: 7px 12px; min-height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1.3;
+}
+
+/* ── Player info boxes ─────────────────────────────────── */
+.player-info {
+  position: absolute; z-index: 20;
+  width: var(--info-w);
+  border: 3px solid rgba(255,255,255,0.5);
+  border-radius: 8px; overflow: hidden;
+  text-align: center;
+  background: rgba(0,0,0,0.3);
+  transition: border-color 0.3s;
+}
+.player-info.active { border-color: var(--active); box-shadow: 0 0 12px rgba(255,215,0,0.4); }
+.player-name { background: rgba(50,50,50,0.85); padding: 4px 6px; font-size: var(--info-fs-name); font-weight: 700; }
+.player-score { background: rgba(0,0,0,0.7); padding: 4px 6px; font-size: var(--info-fs-score); font-weight: 700; }
+.player-stats { display: flex; }
+.player-bid, .player-tricks { flex: 1; padding: 3px 4px; font-size: var(--info-fs-stat); font-weight: 600; }
+.player-bid { background: rgba(200,200,200,0.85); color: #000; }
+.player-tricks { background: rgba(60,60,60,0.85); color: #fff; }
+
+/* South (human) player gets gold styling */
+#info-south .player-name  { background: rgba(138,112,48,0.9); }
+#info-south .player-score { background: rgba(160,130,60,0.85); color: #1a1a1a; }
+#info-south .player-bid   { background: rgba(180,160,100,0.85); color: #1a1a1a; }
+#info-south .player-tricks { background: rgba(100,80,40,0.85); }
+
+/* Positions */
+#info-north {
+  top: clamp(44px, 7vh, 60px);
+  left: 50%; transform: translateX(-50%);
+}
+#info-east {
+  right: clamp(6px, 1.5vw, 16px);
+  top: 50%; transform: translateY(-50%);
+}
+#info-west {
+  left: clamp(6px, 1.5vw, 16px);
+  top: 50%; transform: translateY(-50%);
+}
+
+/* Mobile: move E/W higher so trick area & hand have room */
+@media (max-width: 768px) {
+  #info-east { top: clamp(44px, 8vh, 80px); transform: none; }
+  #info-west  { top: clamp(44px, 8vh, 80px); transform: none; }
+  #info-north { top: clamp(44px, 7vh, 60px); }
+}
+@media (max-width: 480px) {
+  #info-east { right: 4px; }
+  #info-west  { left: 4px; }
+}
+
+/* ── Bottom bar ────────────────────────────────────────── */
+#bottom-bar {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 8px 10px; z-index: 20;
+  pointer-events: none;
+}
+#bottom-bar > * { pointer-events: auto; }
+#game-info {
+  display: flex; align-items: center; gap: 8px;
+}
+#round-text {
+  font-size: clamp(11px, 2.2vw, 14px);
+  font-weight: 600; line-height: 1.4;
+  background: rgba(0,0,0,0.45); border-radius: 6px;
+  padding: 6px 10px;
+}
+#trump-card {
+  width: calc(var(--card-w) * 0.6);
+  height: calc(var(--card-h) * 0.6);
+  background-size: cover;
+  background-position: center;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  border: 2px solid var(--gold-dark);
+}
+#info-south { position: relative; } /* inside bottom-bar, not absolute */
+
+/* ── Table background image (desktop) ──────────────────── */
+#table-bg {
+  position: absolute;
+  width: 960px; height: 640px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+}
+@media (max-width: 1024px) { #table-bg { display: none; } }
+
+/* ── Trick area ────────────────────────────────────────── */
+#trick-area {
+  position: absolute;
+  width: var(--trick-size);
+  height: var(--trick-size);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  z-index: 10;
+  border-radius: 12px;
+}
+
+/* Card slots inside trick area — percentage based for perfect centering */
+.played-card {
+  position: absolute;
+  width: var(--card-w); height: var(--card-h);
+  z-index: 11;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.3, 1),
+              opacity 0.45s ease-out,
+              filter 0.3s ease;
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+/* Final resting positions */
+.played-card[data-pos="north"] { left: 50%; top: 2%;    transform: translateX(-50%); }
+.played-card[data-pos="south"] { left: 50%; bottom: 2%; transform: translateX(-50%); }
+.played-card[data-pos="east"]  { right: 2%; top: 50%;   transform: translateY(-50%); }
+.played-card[data-pos="west"]  { left: 2%;  top: 50%;   transform: translateY(-50%); }
+
+/* Entry animation: cards fly in from each player's direction */
+.played-card.entering[data-pos="north"] { transform: translateX(-50%) translateY(-350%); opacity: 0.5; }
+.played-card.entering[data-pos="south"] { transform: translateX(-50%) translateY(350%);  opacity: 0.5; }
+.played-card.entering[data-pos="east"]  { transform: translateY(-50%) translateX(350%);  opacity: 0.5; }
+.played-card.entering[data-pos="west"]  { transform: translateY(-50%) translateX(-350%); opacity: 0.5; }
+
+.winning-card { filter: drop-shadow(0 0 10px gold) drop-shadow(0 0 4px gold); }
+
+/* ── Bid area ──────────────────────────────────────────── */
+#bid-area {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--card-h) + clamp(60px, 10vh, 80px));
+  z-index: 25;
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+}
+.bid-button {
+  width: clamp(42px, 7vw, 56px);
+  height: clamp(42px, 7vw, 56px);
+  border-radius: 50%; border: 2px solid var(--gold-dark);
+  background: rgba(0,0,0,0.5); color: #fff;
+  font-size: clamp(16px, 3vw, 20px); font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center;
+}
+.bid-button:hover { background: var(--gold-dark); color: #fff; transform: scale(1.08); }
+.bid-button:active { transform: scale(0.95); }
+
+/* ── Player hand ───────────────────────────────────────── */
+#player-hand {
+  position: absolute;
+  bottom: clamp(46px, 7vh, 60px);
+  left: 50%; transform: translateX(-50%);
+  z-index: 25;
+  display: flex; justify-content: center; gap: 4px;
+}
+#player-hand .card {
+  width: var(--card-w); height: var(--card-h);
+  border-radius: 5px;
+  transition: transform 0.2s, filter 0.2s, opacity 0.3s;
+  cursor: default;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+#player-hand .card.deal-enter {
+  opacity: 0;
+  transform: translateY(60px) translateX(-40px);
+}
+#player-hand .card.deal-active {
+  transition: transform 0.4s cubic-bezier(0.2,0.8,0.3,1), opacity 0.4s ease-out, filter 0.2s;
+  opacity: 1;
+  transform: translateY(0) translateX(0);
+}
+#player-hand .card.valid {
+  cursor: pointer;
+  filter: drop-shadow(0 0 10px rgba(255,215,0,0.7));
+}
+#player-hand .card.valid:hover {
+  transform: translateY(-10px);
+  filter: drop-shadow(0 0 14px rgba(255,215,0,0.9));
+}
+#player-hand .card.valid:active { transform: translateY(-4px) scale(0.97); }
+
+/* Mobile: slightly more overlap if many cards */
+@media (max-width: 480px) {
+  #player-hand { gap: 2px; }
+}
+
+/* ══════════════════════════════════════════════════════════
+   SCOREBOARD
+   ══════════════════════════════════════════════════════════ */
+#scoreboard-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.6);
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(3px);
+}
+#scoreboard-overlay.show { display: flex; }
+#scoreboard-box {
+  background: #f5f3ee; color: #1a1a1a;
+  border-radius: 14px; padding: 20px;
+  max-width: 95vw; max-height: 90vh;
+  overflow: auto; position: relative;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+#scoreboard-close {
+  position: absolute; top: 8px; right: 14px;
+  font-size: 28px; cursor: pointer; color: #666;
+  line-height: 1;
+}
+#scoreboard-close:hover { color: #000; }
+#scoreboard-title {
+  font-family: 'Cinzel', serif;
+  font-size: 20px; font-weight: 700; color: #333;
+  text-align: center; margin-bottom: 12px;
+}
+#scoreboard-table {
+  border-collapse: collapse; width: 100%;
+  font-size: clamp(10px, 2vw, 13px);
+}
+#scoreboard-table th, #scoreboard-table td {
+  border: 1px solid #ccc; padding: 4px 6px; text-align: center;
+  white-space: nowrap;
+}
+#scoreboard-table th {
+  background: #e8e4db; font-weight: 700; position: sticky; top: 0;
+}
+.main-column { border-right: 2px solid #999; }
+.separator { border-bottom: 2px solid #999; }
+.score-neg { color: var(--red); font-weight: 700; }
+.score-pos { color: #2e7d32; }
+.human-col { background: rgba(197,160,64,0.1); }
+
+/* ══════════════════════════════════════════════════════════
+   SIM LOG
+   ══════════════════════════════════════════════════════════ */
+#sim-log {
+  position: fixed; top: 0; left: 0;
+  width: clamp(260px, 30vw, 340px);
+  height: 100vh; z-index: 150;
+  background: rgba(0,0,0,0.88); color: #ccc;
+  display: none; flex-direction: column;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px);
+}
+#sim-log.show { display: flex; }
+#sim-log-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: rgba(255,255,255,0.06);
+  font-size: 13px; font-weight: 700;
+}
+#sim-log-close { cursor: pointer; font-size: 20px; line-height: 1; }
+#sim-log-close:hover { color: #fff; }
+#sim-log-body {
+  flex: 1; overflow-y: auto; padding: 8px 12px;
+  font-size: 11px; line-height: 1.6;
+}
+#sim-log-body p { margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 4px; }
+#sim-log-body::-webkit-scrollbar { width: 4px; }
+#sim-log-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+
+/* ══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════════════════════ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.3s ease both; }
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 8px rgba(255,215,0,0.3); }
+  50%      { box-shadow: 0 0 16px rgba(255,215,0,0.6); }
+}
+.player-info.active { animation: pulse-border 1.5s ease infinite; }

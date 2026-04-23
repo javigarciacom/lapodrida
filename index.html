@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>La Podrida – Juego de Cartas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Difficulty modal -->
+  <div id="difficulty-modal">
+    <div class="dm-box">
+      <h1 class="dm-title">La Podrida</h1>
+      <p class="dm-subtitle">Juego de cartas · 4 jugadores</p>
+      <p class="dm-label">Elige la dificultad de la IA</p>
+      <div class="dm-options">
+        <button class="dm-btn dm-easy" data-diff="easy">
+          <span class="dm-btn-icon">♠</span>
+          <span class="dm-btn-name">Fácil</span>
+          <span class="dm-btn-desc">La IA comete errores</span>
+        </button>
+        <button class="dm-btn dm-medium" data-diff="medium">
+          <span class="dm-btn-icon">♦</span>
+          <span class="dm-btn-name">Medio</span>
+          <span class="dm-btn-desc">Partida equilibrada</span>
+        </button>
+        <button class="dm-btn dm-hard" data-diff="hard">
+          <span class="dm-btn-icon">♣</span>
+          <span class="dm-btn-name">Difícil</span>
+          <span class="dm-btn-desc">La IA juega al máximo</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game -->
+  <div id="game">
+    <!-- Top bar -->
+    <div id="top-bar">
+      <button id="new-game">Nueva Partida</button>
+      <div id="message"></div>
+      <button id="scoreboard-button">Puntuación</button>
+    </div>
+
+    <!-- Player info boxes -->
+    <div id="info-north" class="player-info"></div>
+    <div id="info-east" class="player-info"></div>
+    <div id="info-west" class="player-info"></div>
+
+    <!-- Table background (desktop only) -->
+    <img id="table-bg" src="https://javigarcia.com/lapodrida/img/fondoiPocha-hd.png" alt="" draggable="false">
+
+    <!-- Trick area (center table) -->
+    <div id="trick-area"></div>
+
+    <!-- Bid area -->
+    <div id="bid-area"></div>
+
+    <!-- Player hand -->
+    <div id="player-hand"></div>
+
+    <!-- Bottom bar: round info + trump + south info -->
+    <div id="bottom-bar">
+      <div id="game-info">
+        <div id="round-text"></div>
+        <div id="trump-card"></div>
+      </div>
+      <div id="info-south" class="player-info"></div>
+    </div>
+  </div>
+
+  <!-- Scoreboard overlay -->
+  <div id="scoreboard-overlay">
+    <div id="scoreboard-box">
+      <span id="scoreboard-close">&times;</span>
+      <h2 id="scoreboard-title">Puntuación</h2>
+      <div id="scoreboard-content"></div>
+    </div>
+  </div>
+
+  <!-- Sim log -->
+  <div id="sim-log">
+    <div id="sim-log-header">
+      <span>AI Log</span>
+      <span id="sim-log-close">&times;</span>
+    </div>
+    <div id="sim-log-body"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
