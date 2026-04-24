@@ -66,14 +66,19 @@
     <!-- Player hand -->
     <div id="player-hand"></div>
 
-    <!-- Bottom bar: round info + trump + south info -->
-    <div id="bottom-bar">
-      <div id="game-info">
-        <div id="round-text"></div>
-        <div id="trump-card"></div>
-      </div>
-      <div id="info-south" class="player-info"></div>
+    <!-- Game info box: aligned horizontally with info-west, vertically with info-south.
+         Three rows mirroring the player-info layout (name / score / stats). -->
+    <div id="game-info-box" class="player-info">
+      <div class="player-name gi-tricks">-/-</div>
+      <div class="player-score gi-round">-/-</div>
+      <div class="player-stats gi-trump-row"><div class="gi-trump">-</div></div>
     </div>
+
+    <!-- Trump card: floats behind the dealer's info box (positioned by JS) -->
+    <div id="trump-card" class="hidden"></div>
+
+    <!-- South (human) info: positioned absolutely so it aligns with info-east -->
+    <div id="info-south" class="player-info"></div>
   </div>
 
   <!-- Scoreboard overlay -->

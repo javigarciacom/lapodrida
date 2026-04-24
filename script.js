@@ -566,11 +566,52 @@ function updateSimLog(message) {
  * FUNCIONES DEL JUEGO — UI
  ***********************/
 function updateRoundInfo() {
-  const rt = document.getElementById("round-text");
-  rt.innerHTML = "Ronda " + (currentRoundIndex + 1) + "/" + rounds.length + "<br>Bazas: " + handSize;
+  updateGameInfoBox();
   const tc = document.getElementById("trump-card");
   tc.style.backgroundImage = "url(" + getCardImageSrc(trump) + ")";
+  tc.classList.remove("hidden");
+  positionTrumpCardOnDealer();
 }
+
+function updateGameInfoBox() {
+  const box = document.getElementById("game-info-box");
+  if (!box) return;
+  const totalBids = players.reduce((sum, p) => sum + (p.bid !== null ? p.bid : 0), 0);
+  const suitKey = trump ? trump.suit : null;
+  const suitName = trump ? getSuitName(trump.suit) : "-";
+  box.querySelector(".gi-tricks").textContent = handSize + "/" + totalBids;
+  box.querySelector(".gi-round").textContent  = (currentRoundIndex + 1) + "/" + rounds.length;
+  const trumpRow = box.querySelector(".gi-trump");
+  trumpRow.textContent = suitName;
+  trumpRow.className = "gi-trump" + (suitKey ? " suit-" + suitKey : "");
+}
+
+function positionTrumpCardOnDealer() {
+  const tc = document.getElementById("trump-card");
+  if (!tc || dealer === null) return;
+  const dealerPlayer = players.find(p => p.id === dealer);
+  if (!dealerPlayer) return;
+  const dealerBox = document.getElementById(
+    dealerPlayer.type === "human" ? "info-south" :
+    dealerPlayer.position === "north" ? "info-north" :
+    dealerPlayer.position === "east"  ? "info-east"  : "info-west"
+  );
+  if (!dealerBox) return;
+  const game = document.getElementById("game");
+  const gameRect = game.getBoundingClientRect();
+  const boxRect = dealerBox.getBoundingClientRect();
+  const trumpH = tc.offsetHeight || boxRect.height * 0.55;
+  const trumpW = tc.offsetWidth || boxRect.width * 0.55;
+  // 2/3 of the card sticks above the box
+  const top = boxRect.top - gameRect.top - (trumpH * 2 / 3);
+  const left = boxRect.left - gameRect.left + (boxRect.width - trumpW) / 2;
+  tc.style.top = top + "px";
+  tc.style.left = left + "px";
+  tc.style.right = "auto";
+  tc.style.bottom = "auto";
+}
+
+window.addEventListener("resize", positionTrumpCardOnDealer);
 
 function updatePlayerInfo() {
   players.forEach(p => {
@@ -580,15 +621,17 @@ function updatePlayerInfo() {
       p.position === "east"  ? "info-east"  : "info-west"
     );
     if (!infoDiv) return;
-    const dealerMark = p.id === dealer ? ' (R)' : '';
+    infoDiv.classList.toggle("is-dealer", p.id === dealer);
     infoDiv.innerHTML =
-      '<div class="player-name">' + p.name + dealerMark + '</div>' +
+      '<div class="player-name">' + p.name + '</div>' +
       '<div class="player-score">' + p.score + '</div>' +
       '<div class="player-stats">' +
         '<div class="player-bid">' + (p.bid !== null ? p.bid : '-') + '</div>' +
         '<div class="player-tricks">' + p.tricks + '</div>' +
       '</div>';
   });
+  updateGameInfoBox();
+  positionTrumpCardOnDealer();
   highlightActivePlayer();
 }
 

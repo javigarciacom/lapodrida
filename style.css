@@ -188,7 +188,9 @@ body {
   border: 3px solid rgba(255,255,255,0.5);
   border-radius: 8px; overflow: hidden;
   text-align: center;
-  background: rgba(0,0,0,0.3);
+  /* Solid backdrop so the trump card, floating behind the dealer's box, is
+     cleanly hidden in the overlapped area (only the overhang shows). */
+  background: #1a1a1a;
   transition: border-color 0.3s;
 }
 .player-info.active { border-color: var(--active); box-shadow: 0 0 12px rgba(255,215,0,0.4); }
@@ -205,9 +207,18 @@ body {
 #info-south .player-bid   { background: rgba(180,160,100,0.85); color: #1a1a1a; }
 #info-south .player-tricks { background: rgba(100,80,40,0.85); }
 
+/* Trump-over-dealer offset: vertical room reserved above each info box so the
+   trump card (sized via --trump-h) can hang above the dealer's box with ~2/3
+   of its height sticking out. */
+:root {
+  --trump-w: calc(var(--card-w) * 0.6);
+  --trump-h: calc(var(--card-h) * 0.6);
+  --trump-overhang: calc(var(--trump-h) * 2 / 3 + 6px);
+}
+
 /* Positions */
 #info-north {
-  top: calc(clamp(44px, 7vh, 60px) + var(--safe-top));
+  top: calc(clamp(44px, 7vh, 60px) + var(--safe-top) + var(--trump-overhang));
   left: 50%; transform: translateX(-50%);
 }
 #info-east {
@@ -218,13 +229,38 @@ body {
   left: calc(clamp(6px, 1.5vw, 16px) + var(--safe-left));
   top: 50%; transform: translateY(-50%);
 }
+/* South (human) info — absolute, aligned to same right edge as info-east */
+#info-south {
+  position: absolute;
+  right: calc(clamp(6px, 1.5vw, 16px) + var(--safe-right));
+  bottom: calc(clamp(8px, 1.5vh, 16px) + var(--safe-bottom));
+  z-index: 20;
+}
+
+/* Desktop: pull E/W/S boxes closer to the 960px-wide table background.
+   The table spans viewport-center ± 480px, so we position the boxes just
+   outside that edge (with a small gap) instead of against the viewport edge. */
+@media (min-width: 1025px) {
+  #info-east {
+    right: max(calc(clamp(6px, 1.5vw, 16px) + var(--safe-right)),
+               calc(50vw - 480px - var(--info-w) - 24px));
+  }
+  #info-west {
+    left: max(calc(clamp(6px, 1.5vw, 16px) + var(--safe-left)),
+              calc(50vw - 480px - var(--info-w) - 24px));
+  }
+  #info-south {
+    right: max(calc(clamp(6px, 1.5vw, 16px) + var(--safe-right)),
+               calc(50vw - 480px - var(--info-w) - 24px));
+  }
+}
 
 /* Mobile portrait: move E/W down from the top so they don't stack with top-bar,
    but keep them vertically centered-ish so they frame the trick area */
 @media (max-width: 768px) {
-  #info-east  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top)); transform: none; }
-  #info-west  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top)); transform: none; }
-  #info-north { top: calc(clamp(44px, 7vh, 60px) + var(--safe-top)); }
+  #info-east  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top) + var(--trump-overhang)); transform: none; }
+  #info-west  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top) + var(--trump-overhang)); transform: none; }
+  #info-north { top: calc(clamp(44px, 7vh, 60px) + var(--safe-top) + var(--trump-overhang)); }
 }
 @media (max-width: 480px) {
   #info-east { right: calc(4px + var(--safe-right)); }
@@ -234,39 +270,55 @@ body {
 /* Landscape-short (phones rotated, split-screens): keep E/W vertically centered
    but narrower, and pull north tight against the top to reserve space for the hand */
 @media (max-height: 500px) {
-  #info-north { top: calc(4px + var(--safe-top)); }
+  #info-north { top: calc(4px + var(--safe-top) + var(--trump-overhang)); }
   #info-east  { top: 50%; transform: translateY(-50%); right: calc(6px + var(--safe-right)); }
   #info-west  { top: 50%; transform: translateY(-50%); left:  calc(6px + var(--safe-left)); }
 }
 
-/* ── Bottom bar ────────────────────────────────────────── */
-#bottom-bar {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  display: flex; align-items: flex-end; justify-content: space-between;
-  padding: 8px calc(10px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(10px + var(--safe-left));
-  z-index: 20;
-  pointer-events: none;
+/* ── Game info box (bottom-left, matches south vertically & west horizontally) ── */
+#game-info-box {
+  /* Horizontal alignment: matches #info-west left offset */
+  left: calc(clamp(6px, 1.5vw, 16px) + var(--safe-left));
+  /* Vertical alignment: matches #info-south bottom offset */
+  bottom: calc(clamp(8px, 1.5vh, 16px) + var(--safe-bottom));
 }
-#bottom-bar > * { pointer-events: auto; }
-#game-info {
-  display: flex; align-items: center; gap: 8px;
+/* Trump row replaces the player-stats two-column split with one full-width cell */
+#game-info-box .gi-trump-row { display: block; }
+#game-info-box .gi-trump {
+  padding: 3px 4px;
+  font-size: var(--info-fs-stat);
+  font-weight: 700;
+  color: #1a1a1a;
+  background: rgba(200,200,200,0.85);
 }
-#round-text {
-  font-size: clamp(11px, 2.2vw, 14px);
-  font-weight: 600; line-height: 1.4;
-  background: rgba(0,0,0,0.45); border-radius: 6px;
-  padding: 6px 10px;
+#game-info-box .gi-trump.suit-oros    { background: #f5d466; }  /* yellow/gold */
+#game-info-box .gi-trump.suit-copas   { background: #e58a8a; }  /* red/pink */
+#game-info-box .gi-trump.suit-espadas { background: #9fc4e8; }  /* blue */
+#game-info-box .gi-trump.suit-bastos  { background: #b8d49b; }  /* green */
+
+/* Desktop: align game-info-box left edge to table background edge, same as info-west */
+@media (min-width: 1025px) {
+  #game-info-box {
+    left: max(calc(clamp(6px, 1.5vw, 16px) + var(--safe-left)),
+              calc(50vw - 480px - var(--info-w) - 24px));
+  }
 }
+
+/* Trump card floats BEHIND whichever info box belongs to the dealer; JS positions it */
 #trump-card {
-  width: calc(var(--card-w) * 0.6);
-  height: calc(var(--card-h) * 0.6);
+  position: absolute;
+  width: var(--trump-w);
+  height: var(--trump-h);
   background-size: cover;
   background-position: center;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.55);
   border: 2px solid var(--gold-dark);
+  z-index: 15;
+  pointer-events: none;
+  transition: top 0.4s ease, left 0.4s ease, right 0.4s ease, bottom 0.4s ease;
 }
-#info-south { position: relative; } /* inside bottom-bar, not absolute */
+#trump-card.hidden { display: none; }
 
 /* ── Table background image (desktop) ──────────────────── */
 #table-bg {
