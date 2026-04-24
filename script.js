@@ -2,7 +2,7 @@
  * LA PODRIDA — JUEGO DE CARTAS (RESPONSIVE + DIFICULTAD)
  ***********************/
 
-const IMG_BASE = 'https://javigarcia.com/lapodrida/img/';
+const IMG_BASE = 'img/';
 
 /***********************
  * CONFIGURACION DE DIFICULTAD
@@ -44,6 +44,7 @@ let currentPhase = "bidding";
 let currentTrick = [];
 let currentPlayer = null;
 let scoreData = [];
+let playedCardsThisRound = [];
 
 /***********************
  * FUNCIONES UTILITARIAS
@@ -117,15 +118,20 @@ function getLegalCardsForSimulation(hand, trick, ts) {
   return hand.slice();
 }
 
+// Trump-aware strength: trumps dominate any non-trump card
+function cardStrength(card, ts) {
+  return (card.suit === ts ? 100 : 0) + getRankValue(card.rank);
+}
+
 // Heuristic card selection for smarter simulation opponents (hard mode)
 function heuristicSimSelect(hand, trick, ts) {
   const legal = getLegalCardsForSimulation(hand, trick, ts);
   if (legal.length <= 1) return legal[0];
 
   if (trick.length === 0) {
-    // Leading: 60% play highest, 40% random
-    if (Math.random() < 0.6) {
-      return legal.reduce((a, b) => getRankValue(a.rank) >= getRankValue(b.rank) ? a : b);
+    // Leading: prefer strongest card (trump-aware). Small noise to avoid determinism.
+    if (Math.random() < 0.85) {
+      return legal.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
     }
     return legal[Math.floor(Math.random() * legal.length)];
   }
@@ -151,14 +157,14 @@ function heuristicSimSelect(hand, trick, ts) {
     return false;
   });
 
-  if (winners.length > 0 && Math.random() < 0.7) {
+  if (winners.length > 0 && Math.random() < 0.85) {
     // Play cheapest winner (economize strong cards)
-    return winners.reduce((a, b) => getRankValue(a.rank) <= getRankValue(b.rank) ? a : b);
+    return winners.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
   }
 
-  // Can't win or choosing not to: dump lowest card (70%) or random
-  if (Math.random() < 0.7) {
-    return legal.reduce((a, b) => getRankValue(a.rank) <= getRankValue(b.rank) ? a : b);
+  // Can't win or choosing not to: dump weakest card
+  if (Math.random() < 0.85) {
+    return legal.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
   }
   return legal[Math.floor(Math.random() * legal.length)];
 }
@@ -244,6 +250,56 @@ function aiComputeBid(pid) {
   return simulateBid(players.find(p => p.id === pid));
 }
 
+// Bid-aware deterministic play for the AI's own future turns inside a simulation.
+// tricksNeeded = aiPlayer.bid - (tricks already won in real game + tricks won in this simulation)
+function aiOwnSimSelect(hand, trick, ts, tricksNeeded, tricksRemaining) {
+  const legal = getLegalCardsForSimulation(hand, trick, ts);
+  if (legal.length <= 1) return legal[0];
+
+  if (trick.length === 0) {
+    // Leading: need all remaining -> strongest; don't want more -> weakest; mid -> mid (cheap winner)
+    if (tricksNeeded >= tricksRemaining) {
+      return legal.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+    }
+    if (tricksNeeded <= 0) {
+      return legal.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+    }
+    // Neutral lead: strong card to try to take a trick
+    return legal.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+  }
+
+  // Following: compute current winner and partition legal cards
+  const ledSuit = trick[0].card.suit;
+  let bestCard = trick[0].card;
+  trick.forEach(play => {
+    if (play.card.suit === ts) {
+      if (bestCard.suit !== ts || getRankValue(play.card.rank) > getRankValue(bestCard.rank))
+        bestCard = play.card;
+    } else if (bestCard.suit !== ts && play.card.suit === ledSuit) {
+      if (getRankValue(play.card.rank) > getRankValue(bestCard.rank))
+        bestCard = play.card;
+    }
+  });
+  const winners = legal.filter(c => {
+    if (c.suit === ts && bestCard.suit !== ts) return true;
+    if (c.suit === ts && bestCard.suit === ts) return getRankValue(c.rank) > getRankValue(bestCard.rank);
+    if (c.suit === ledSuit && bestCard.suit !== ts) return getRankValue(c.rank) > getRankValue(bestCard.rank);
+    return false;
+  });
+  const losers = legal.filter(c => !winners.includes(c));
+
+  if (tricksNeeded > 0 && winners.length > 0) {
+    // Want this trick: use cheapest winner
+    return winners.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+  }
+  if (tricksNeeded <= 0 && losers.length > 0) {
+    // Don't want this trick: dump highest loser (preserve small cards for later loses)
+    return losers.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+  }
+  // Forced: either can't avoid winning or can't win; play weakest legal card
+  return legal.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+}
+
 function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
   let simTrick = currentTrick.slice();
   const aiHandSim = aiPlayer.hand.slice();
@@ -261,6 +317,9 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
   currentTrick.forEach(played => {
     fullDeck = fullDeck.filter(c => !(c.suit === played.card.suit && c.rank === played.card.rank));
   });
+  playedCardsThisRound.forEach(played => {
+    fullDeck = fullDeck.filter(c => !(c.suit === played.suit && c.rank === played.rank));
+  });
 
   const simOppHands = {};
   players.forEach(p => {
@@ -276,12 +335,16 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
   });
 
   // Complete current trick for remaining players
+  let simTricksWon = 0;
   const played = simTrick.map(item => item.playerId);
   players.filter(p => !played.includes(p.id)).forEach(p => {
     const simHand = p.id === aiPlayer.id ? aiHandSim : (simOppHands[p.id] || []);
     if (simHand.length === 0) return;
     let chosen;
-    if (diffCfg.smartSim) {
+    if (p.id === aiPlayer.id) {
+      const needed = aiPlayer.bid - aiPlayer.tricks - simTricksWon;
+      chosen = aiOwnSimSelect(simHand, simTrick, trump.suit, needed, simHand.length + 1);
+    } else if (diffCfg.smartSim) {
       chosen = heuristicSimSelect(simHand, simTrick, trump.suit);
     } else {
       let legal = getLegalCardsForSimulation(simHand, simTrick, trump.suit);
@@ -298,6 +361,7 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
   if (simTrick.length === 0) return 0;
   let winner = determineTrickWinnerSim(simTrick, trump.suit);
   let tricksWon = (winner === aiPlayer.id) ? 1 : 0;
+  simTricksWon = tricksWon;
 
   let turnOrder = [];
   const si = players.findIndex(p => p.id === winner);
@@ -316,7 +380,10 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
       const simHand = pid === aiPlayer.id ? aiHandSim : (simOppHands[pid] || []);
       if (simHand.length === 0) continue;
       let chosen;
-      if (diffCfg.smartSim) {
+      if (pid === aiPlayer.id) {
+        const needed = aiPlayer.bid - aiPlayer.tricks - tricksWon;
+        chosen = aiOwnSimSelect(simHand, trick, trump.suit, needed, simHand.length);
+      } else if (diffCfg.smartSim) {
         chosen = heuristicSimSelect(simHand, trick, trump.suit);
       } else {
         let legal = getLegalCardsForSimulation(simHand, trick, trump.suit);
@@ -353,6 +420,25 @@ function aiSelectCard(player) {
   // Difficulty: random play chance
   if (diffCfg.randomPlay > 0 && Math.random() < diffCfg.randomPlay) {
     return legalIndices[Math.floor(Math.random() * legalIndices.length)];
+  }
+
+  // Hard mode: deterministic shortcut when leading a trick and the situation is extreme
+  if (diffCfg.smartSim && currentTrick.length === 0) {
+    const tricksNeeded = player.bid - player.tricks;
+    const tricksRemaining = player.hand.length;
+    const legalCards = legalIndices.map(i => ({ idx: i, card: player.hand[i] }));
+    if (tricksNeeded >= tricksRemaining) {
+      // Must win every remaining trick: lead the strongest card to pull out rivals' top cards
+      return legalCards.reduce((a, b) =>
+        cardStrength(a.card, trump.suit) >= cardStrength(b.card, trump.suit) ? a : b
+      ).idx;
+    }
+    if (tricksNeeded <= 0) {
+      // Already at or above target: lead the weakest card to minimize chance of winning
+      return legalCards.reduce((a, b) =>
+        cardStrength(a.card, trump.suit) <= cardStrength(b.card, trump.suit) ? a : b
+      ).idx;
+    }
   }
 
   // Hard mode: deterministic play when last in trick (full information)
@@ -417,6 +503,15 @@ function aiSelectCard(player) {
     updateSimLog(player.name + ", R" + (currentRoundIndex + 1) + ", " + cardText + ", " + parts.join(", "));
   });
 
+  // Tiebreaker strength preference: if AI still needs tricks -> prefer stronger card,
+  // otherwise (already at/over target) -> prefer weaker card. Epsilon keeps ties decidable.
+  const tricksStillNeeded = target - player.tricks;
+  const preferStrong = tricksStillNeeded > 0;
+  const strengthScore = ci => {
+    const s = cardStrength(player.hand[ci], trump.suit);
+    return preferStrong ? s : -s;
+  };
+
   // Hard mode: weighted proximity scoring (considers all outcomes, weighted by distance to target)
   if (diffCfg.smartSim) {
     let bestCandidate = null, bestScore = -Infinity;
@@ -429,23 +524,29 @@ function aiSelectCard(player) {
         const weight = dist === 0 ? 1.0 : dist === 1 ? 0.4 : dist === 2 ? 0.15 : 0.05;
         score += (r.freq[i] / total) * weight;
       }
+      // Tiebreaker: nudge by strength preference (small enough not to override meaningful diffs)
+      score += strengthScore(r.candidate) * 1e-4;
       if (score > bestScore) { bestScore = score; bestCandidate = r.candidate; }
     });
     if (bestCandidate !== null) return bestCandidate;
   }
 
-  // Normal mode: most simulations hitting target exactly
-  let best = null, maxExact = -1;
-  candidateResults.forEach(r => { if (r.freq[target] > maxExact) { maxExact = r.freq[target]; best = r.candidate; } });
-  if (maxExact > 0) return best;
+  // Normal mode: most simulations hitting target exactly (with strength tiebreaker)
+  let best = null, bestKey = -Infinity;
+  candidateResults.forEach(r => {
+    const key = r.freq[target] + strengthScore(r.candidate) * 1e-4;
+    if (key > bestKey) { bestKey = key; best = r.candidate; }
+  });
+  if (best !== null && candidateResults.some(r => r.freq[target] > 0)) return best;
 
   // Fallback: closest to target
-  let bestClose = null, maxClose = -1;
+  let bestClose = null, bestCloseKey = -Infinity;
   candidateResults.forEach(r => {
     const close = Math.max(r.freq[target + 1] || 0, r.freq[target - 1] || 0);
-    if (close > maxClose) { maxClose = close; bestClose = r.candidate; }
+    const key = close + strengthScore(r.candidate) * 1e-4;
+    if (key > bestCloseKey) { bestCloseKey = key; bestClose = r.candidate; }
   });
-  if (maxClose > 0) return bestClose;
+  if (bestClose !== null) return bestClose;
 
   return legalIndices[Math.floor(Math.random() * legalIndices.length)];
 }
@@ -647,6 +748,7 @@ function playTurn() {
     }, 800);
   } else {
     showMessage("Tu turno — toca una carta resaltada.");
+    document.getElementById("player-hand").style.pointerEvents = "";
     updateHandsDisplay();
   }
 }
@@ -703,6 +805,7 @@ function animateTrickCards(winner) {
     el.style.opacity = "0";
   });
   setTimeout(() => {
+    currentTrick.forEach(item => playedCardsThisRound.push(item.card));
     clearTrickArea();
     currentTrick = [];
     currentPlayer = winner;
@@ -860,6 +963,8 @@ function onHumanCardClick(event) {
     showMessage("¡Debes seguir el palo o tirar triunfo!");
     return;
   }
+  // Lock the hand immediately so rapid clicks on other cards are ignored
+  document.getElementById("player-hand").style.pointerEvents = "none";
   playCard(2, index, clickedEl);
 }
 
@@ -884,6 +989,7 @@ function startRound() {
   }
   currentPhase = "bidding";
   currentTrick = [];
+  playedCardsThisRound = [];
   biddingIndex = 0;
   handSize = rounds[currentRoundIndex];
   players.forEach(p => { p.hand = []; p.bid = null; p.tricks = 0; });
