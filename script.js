@@ -540,21 +540,24 @@ function aiSelectCard(player) {
     return preferStrong ? s : -s;
   };
 
-  // Hard mode: weighted proximity scoring (considers all outcomes, weighted by distance to target)
+  // Hard mode: pick the card that maximises expected score, using the real
+  // scoring function (+10+3·target if hit, −3·|diff| otherwise) as the weight.
+  // Previously this used hand-tuned weights (1.0 / 0.4 / 0.15 / 0.05) which
+  // underestimated how costly a miss-by-1 is relative to an exact hit.
   if (diffCfg.smartSim) {
-    let bestCandidate = null, bestScore = -Infinity;
+    let bestCandidate = null, bestEV = -Infinity;
+    const hitScore = 10 + 3 * target;
     candidateResults.forEach(r => {
-      let score = 0;
+      let ev = 0;
       const total = simsPerCandidate;
       for (let i = 0; i <= handSize; i++) {
-        const dist = Math.abs(i - target);
-        // Weight: exact hit = 1.0, off by 1 = 0.4, off by 2 = 0.15, off by 3+ = 0.05
-        const weight = dist === 0 ? 1.0 : dist === 1 ? 0.4 : dist === 2 ? 0.15 : 0.05;
-        score += (r.freq[i] / total) * weight;
+        const p = r.freq[i] / total;
+        const score = (i === target) ? hitScore : (-3 * Math.abs(i - target));
+        ev += p * score;
       }
-      // Tiebreaker: nudge by strength preference (small enough not to override meaningful diffs)
-      score += strengthScore(r.candidate) * 1e-4;
-      if (score > bestScore) { bestScore = score; bestCandidate = r.candidate; }
+      // Tiebreaker: tiny nudge by strength preference (doesn't override real EV diffs)
+      ev += strengthScore(r.candidate) * 1e-4;
+      if (ev > bestEV) { bestEV = ev; bestCandidate = r.candidate; }
     });
     if (bestCandidate !== null) return bestCandidate;
   }
