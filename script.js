@@ -206,9 +206,16 @@ function simulateRoundForBid(player) {
     const trick = [];
     simOrder.forEach(pid => {
       const hand = copy[pid];
-      const legal = getLegalCardsForSimulation(hand, trick, trump.suit);
-      let chosen = legal[0];
-      legal.forEach(c => { if (getRankValue(c.rank) > getRankValue(chosen.rank)) chosen = c; });
+      let chosen;
+      if (diffCfg.smartSim && pid !== player.id) {
+        // Hard mode: opponents play like real heuristic players, not max-card bots.
+        // Bidder still plays greedy-max so results reflect "bidder's best case".
+        chosen = heuristicSimSelect(hand, trick, trump.suit);
+      } else {
+        const legal = getLegalCardsForSimulation(hand, trick, trump.suit);
+        chosen = legal[0];
+        legal.forEach(c => { if (getRankValue(c.rank) > getRankValue(chosen.rank)) chosen = c; });
+      }
       const idx = hand.findIndex(c => c.suit === chosen.suit && c.rank === chosen.rank);
       if (idx >= 0) hand.splice(idx, 1);
       trick.push({ playerId: pid, card: chosen });
@@ -229,21 +236,43 @@ function simulateBid(player) {
     const tricks = simulateRoundForBid(player);
     freq[tricks] = (freq[tricks] || 0) + 1;
   }
-  let mode = 0, maxCount = 0;
-  for (const key in freq) {
-    if (freq[key] > maxCount) { maxCount = freq[key]; mode = parseInt(key); }
+
+  // Pick bid: hard mode maximises expected score over the distribution
+  // (directly optimises the real scoring function). Easy/medium keep the
+  // legacy behaviour of picking the distribution's mode.
+  let chosenBid;
+  if (diffCfg.smartSim) {
+    let bestBid = 0, bestEV = -Infinity;
+    for (let b = 0; b <= handSize; b++) {
+      let ev = 0;
+      for (const key in freq) {
+        const tricks = parseInt(key);
+        const p = freq[key] / sims;
+        const score = (b === tricks) ? (10 + 3 * tricks) : (-3 * Math.abs(b - tricks));
+        ev += p * score;
+      }
+      if (ev > bestEV) { bestEV = ev; bestBid = b; }
+    }
+    chosenBid = bestBid;
+  } else {
+    let mode = 0, maxCount = 0;
+    for (const key in freq) {
+      if (freq[key] > maxCount) { maxCount = freq[key]; mode = parseInt(key); }
+    }
+    chosenBid = mode;
   }
+
   // Log
   const parts = [];
   for (let i = 0; i <= handSize; i++) parts.push((freq[i] || 0) + " de " + i);
   updateSimLog(player.name + ": R" + (currentRoundIndex + 1) + ", " + handSize + " cartas, " + parts.join(", "));
 
-  // Difficulty: bid noise
+  // Difficulty: bid noise (easy only)
   if (diffCfg.bidNoise > 0 && Math.random() < diffCfg.bidNoise) {
     const delta = Math.random() < 0.5 ? 1 : -1;
-    mode = Math.max(0, Math.min(handSize, mode + delta));
+    chosenBid = Math.max(0, Math.min(handSize, chosenBid + delta));
   }
-  return mode;
+  return chosenBid;
 }
 
 function aiComputeBid(pid) {
