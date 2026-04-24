@@ -160,6 +160,7 @@ body {
 #top-bar {
   position: absolute; top: 0; left: 0; right: 0;
   display: flex; align-items: center; gap: 8px;
+  justify-content: space-between;
   padding: calc(8px + var(--safe-top)) calc(10px + var(--safe-right)) 8px calc(10px + var(--safe-left));
   z-index: 40;
 }
@@ -176,9 +177,17 @@ body {
   flex: 1; text-align: center;
   font-size: clamp(11px, 2.5vw, 14px); font-weight: 600;
   background: rgba(0,0,0,0.45); border-radius: 6px;
-  padding: 7px 12px; min-height: 34px;
+  padding: 7px 12px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   line-height: 1.3;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  /* Ensure the child text is what gets clipped, not the flex item height */
+  min-width: 0;
+}
+/* Very narrow portrait phones: hide the message band so the top bar stops
+   reflowing with every AI move and the buttons stay put. */
+@media (max-width: 420px) {
+  #message { display: none; }
 }
 
 /* ── Player info boxes ─────────────────────────────────── */
@@ -255,11 +264,9 @@ body {
   }
 }
 
-/* Mobile portrait: move E/W down from the top so they don't stack with top-bar,
-   but keep them vertically centered-ish so they frame the trick area */
+/* Mobile: keep N anchored under top-bar; E/W stay vertically centered so
+   they line up with the left/right trick slots (where the cards fly to). */
 @media (max-width: 768px) {
-  #info-east  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top) + var(--trump-overhang)); transform: none; }
-  #info-west  { top: calc(clamp(48px, 9vh, 90px) + var(--safe-top) + var(--trump-overhang)); transform: none; }
   #info-north { top: calc(clamp(44px, 7vh, 60px) + var(--safe-top) + var(--trump-overhang)); }
 }
 @media (max-width: 480px) {
@@ -375,17 +382,26 @@ body {
   left: 50%; transform: translateX(-50%);
   bottom: calc(var(--card-h) + clamp(60px, 10vh, 80px) + var(--safe-bottom));
   z-index: 25;
-  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  display: flex; gap: 6px; flex-wrap: nowrap; justify-content: center;
   max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
 }
+/* On narrow phones we lifted the hand, so the bid row needs matching lift
+   and the buttons must shrink so all 6 (for a 5-card round) fit in one row. */
+@media (max-width: 480px) {
+  #bid-area {
+    bottom: calc(var(--card-h) + clamp(140px, 20vh, 180px) + var(--safe-bottom));
+    gap: 4px;
+  }
+}
 .bid-button {
-  width: clamp(42px, 7vw, 56px);
-  height: clamp(42px, 7vw, 56px);
+  width: clamp(36px, 7vw, 56px);
+  height: clamp(36px, 7vw, 56px);
   border-radius: 50%; border: 2px solid var(--gold-dark);
   background: rgba(0,0,0,0.5); color: #fff;
-  font-size: clamp(16px, 3vw, 20px); font-weight: 700;
+  font-size: clamp(14px, 3vw, 20px); font-weight: 700;
   cursor: pointer; transition: all 0.2s;
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .bid-button:hover { background: var(--gold-dark); color: #fff; transform: scale(1.08); }
 .bid-button:active { transform: scale(0.95); }
@@ -398,6 +414,14 @@ body {
   z-index: 25;
   display: flex; justify-content: center; gap: 4px;
   max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right));
+}
+/* On narrow phones, lift the hand above the info boxes at the bottom corners
+   so 5-card hands don't overlap the bottom-left (game-info) or bottom-right
+   (south player) boxes, which stand ~120-135px tall. */
+@media (max-width: 480px) {
+  #player-hand {
+    bottom: calc(clamp(130px, 18vh, 160px) + var(--safe-bottom));
+  }
 }
 #player-hand .card {
   width: var(--card-w); height: var(--card-h);
