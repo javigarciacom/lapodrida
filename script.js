@@ -990,6 +990,45 @@ function showScoreboard() {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
+
+  // Footer row: final standings. Uses current cumulative score (works both
+  // mid-game and after the 16th round). Ties share the same rank.
+  if (scoreData.length > 0) {
+    const tfoot = document.createElement("tfoot");
+    const tr = document.createElement("tr");
+    tr.id = "scoreboard-rank-row";
+    const tdLabel = document.createElement("td");
+    tdLabel.colSpan = 2; tdLabel.textContent = "Pos.";
+    tr.appendChild(tdLabel);
+
+    const lastIdx = scoreData.length - 1;
+    const currentScores = order.map(p => {
+      const pIdx = players.indexOf(p);
+      return { player: p, total: scoreData[lastIdx].results[pIdx].total };
+    });
+    // Rank: highest total = 1st. Equal totals share a rank (1,1,3,4 — "standard competition" ranking).
+    const sorted = currentScores.slice().sort((a, b) => b.total - a.total);
+    const rankByPlayer = new Map();
+    sorted.forEach((row, i) => {
+      const tiedWithPrev = i > 0 && sorted[i - 1].total === row.total;
+      const rank = tiedWithPrev ? rankByPlayer.get(sorted[i - 1].player.id) : i + 1;
+      rankByPlayer.set(row.player.id, rank);
+    });
+
+    order.forEach(p => {
+      const td = document.createElement("td");
+      td.colSpan = 2;
+      const rank = rankByPlayer.get(p.id);
+      td.textContent = rank + (rank === 1 ? "º 🏆" : "º");
+      td.classList.add("rank-cell");
+      if (rank === 1) td.classList.add("rank-first");
+      if (p.type === "human") td.classList.add("human-col");
+      tr.appendChild(td);
+    });
+    tfoot.appendChild(tr);
+    table.appendChild(tfoot);
+  }
+
   content.appendChild(table);
   document.getElementById("scoreboard-overlay").classList.add("show");
 }

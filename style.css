@@ -230,13 +230,19 @@ body {
   top: calc(clamp(44px, 7vh, 60px) + var(--safe-top) + var(--trump-overhang));
   left: 50%; transform: translateX(-50%);
 }
+/* E/W vertical centre must match the east/west card slots inside #trick-area.
+   The trick-area itself is shifted 5% of its own size above the viewport
+   centre (transform: translate(-50%, -55%)), and E/W cards sit at its
+   vertical centre — so the info boxes need the same 5% lift. */
 #info-east {
   right: calc(clamp(6px, 1.5vw, 16px) + var(--safe-right));
-  top: 50%; transform: translateY(-50%);
+  top: calc(50% - 0.05 * var(--trick-size));
+  transform: translateY(-50%);
 }
 #info-west {
   left: calc(clamp(6px, 1.5vw, 16px) + var(--safe-left));
-  top: 50%; transform: translateY(-50%);
+  top: calc(50% - 0.05 * var(--trick-size));
+  transform: translateY(-50%);
 }
 /* South (human) info — absolute, aligned to same right edge as info-east */
 #info-south {
@@ -278,8 +284,8 @@ body {
    but narrower, and pull north tight against the top to reserve space for the hand */
 @media (max-height: 500px) {
   #info-north { top: calc(4px + var(--safe-top) + var(--trump-overhang)); }
-  #info-east  { top: 50%; transform: translateY(-50%); right: calc(6px + var(--safe-right)); }
-  #info-west  { top: 50%; transform: translateY(-50%); left:  calc(6px + var(--safe-left)); }
+  #info-east  { top: calc(50% - 0.05 * var(--trick-size)); transform: translateY(-50%); right: calc(6px + var(--safe-right)); }
+  #info-west  { top: calc(50% - 0.05 * var(--trick-size)); transform: translateY(-50%); left:  calc(6px + var(--safe-left)); }
 }
 
 /* ── Game info box (bottom-left, matches south vertically & west horizontally) ── */
@@ -385,20 +391,18 @@ body {
   display: flex; gap: 6px; flex-wrap: nowrap; justify-content: center;
   max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
 }
-/* On narrow phones we lifted the hand, so the bid row needs matching lift
-   and the buttons must shrink so all 6 (for a 5-card round) fit in one row. */
+/* On narrow phones we lifted the hand, so the bid row needs matching lift. */
 @media (max-width: 480px) {
   #bid-area {
     bottom: calc(var(--card-h) + clamp(140px, 20vh, 180px) + var(--safe-bottom));
-    gap: 4px;
   }
 }
 .bid-button {
-  width: clamp(36px, 7vw, 56px);
-  height: clamp(36px, 7vw, 56px);
+  width: clamp(42px, 7vw, 56px);
+  height: clamp(42px, 7vw, 56px);
   border-radius: 50%; border: 2px solid var(--gold-dark);
   background: rgba(0,0,0,0.5); color: #fff;
-  font-size: clamp(14px, 3vw, 20px); font-weight: 700;
+  font-size: clamp(16px, 3vw, 20px); font-weight: 700;
   cursor: pointer; transition: all 0.2s;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -431,16 +435,13 @@ body {
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
   flex-shrink: 0;
 }
-/* Fallback: if hand is wider than viewport, let cards overlap slightly */
-@media (max-width: 480px) {
-  #player-hand { gap: 0; }
-  #player-hand .card + .card { margin-left: -10px; }
-}
-@media (max-width: 480px) and (hover: hover) and (pointer: fine) {
-  #player-hand .card:hover { z-index: 2; }
-}
+/* Very narrow viewports only: let cards overlap slightly so a 5-card hand
+   still fits. ≤360px phones have maybe 320px of usable width vs ~240px of
+   5 cards + gaps, so only a modest overlap is needed. Phones wider than
+   that (most of the iPhone range) get full-width cards with no overlap. */
 @media (max-width: 360px) {
-  #player-hand .card + .card { margin-left: -14px; }
+  #player-hand { gap: 2px; }
+  #player-hand .card + .card { margin-left: -6px; }
 }
 #player-hand .card.deal-enter {
   opacity: 0;
@@ -516,6 +517,10 @@ body {
 .main-column { border-right: 2px solid #999; }
 .separator { border-bottom: 2px solid #999; }
 .score-neg { color: var(--red); font-weight: 700; }
+/* Final standings row at the bottom of the scoreboard */
+#scoreboard-rank-row td { background: #e8e4db; font-weight: 700; border-top: 2px solid #999; font-size: 1.05em; }
+#scoreboard-rank-row td.rank-first { background: #f5d466; color: #1a1a1a; }
+#scoreboard-rank-row td:first-child { text-transform: uppercase; letter-spacing: 0.05em; color: #666; font-weight: 700; }
 .score-pos { color: #2e7d32; }
 .human-col { background: rgba(197,160,64,0.1); }
 
