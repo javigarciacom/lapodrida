@@ -411,6 +411,8 @@ body {
 @media (max-width: 480px) {
   #player-hand { gap: 0; }
   #player-hand .card + .card { margin-left: -10px; }
+}
+@media (max-width: 480px) and (hover: hover) and (pointer: fine) {
   #player-hand .card:hover { z-index: 2; }
 }
 @media (max-width: 360px) {
@@ -429,9 +431,16 @@ body {
   cursor: pointer;
   filter: drop-shadow(0 0 10px rgba(255,215,0,0.7));
 }
-#player-hand .card.valid:hover {
-  transform: translateY(-10px);
-  filter: drop-shadow(0 0 14px rgba(255,215,0,0.9));
+/* Only apply hover lift on devices with a real pointer (mouse, trackpad).
+   On touch devices (iPad, iPhone) there is no mouseleave, so :hover can get
+   "stuck" on whatever card sits under the last tap position — causing a
+   random card to stay lifted. (hover: hover) and (pointer: fine) together
+   scope this to actual mice. */
+@media (hover: hover) and (pointer: fine) {
+  #player-hand .card.valid:hover {
+    transform: translateY(-10px);
+    filter: drop-shadow(0 0 14px rgba(255,215,0,0.9));
+  }
 }
 #player-hand .card.valid:active { transform: translateY(-4px) scale(0.97); }
 
