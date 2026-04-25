@@ -483,34 +483,47 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
     }
   });
 
-  // Complete current trick for remaining players
-  let simTricksWon = 0;
-  const played = simTrick.map(item => item.playerId);
-  players.filter(p => !played.includes(p.id)).forEach(p => {
-    const simHand = p.id === aiPlayer.id ? aiHandSim : (simOppHands[p.id] || []);
-    if (simHand.length === 0) return;
+  // Complete current trick: the candidate card is the AI's play this trick.
+  // Figure out the real turn order starting from the leader of currentTrick
+  // and going counter-clockwise (matches gameDirection). Skip players who
+  // already played, play candidateCard when it's the AI's turn, and fill in
+  // the remaining opponents from there.
+  const leaderId = simTrick.length > 0 ? simTrick[0].playerId : aiPlayer.id;
+  const leaderIdx = players.findIndex(p => p.id === leaderId);
+  const turnOrderTrick = [];
+  if (gameDirection === "clockwise") {
+    for (let i = 0; i < players.length; i++) turnOrderTrick.push(players[(leaderIdx + i) % players.length].id);
+  } else {
+    for (let i = 0; i < players.length; i++) turnOrderTrick.push(((leaderIdx - i) % players.length + players.length) % players.length);
+  }
+  const alreadyPlayed = new Set(simTrick.map(item => item.playerId));
+  for (const pid of turnOrderTrick) {
+    if (alreadyPlayed.has(pid)) continue;
+    if (pid === aiPlayer.id) {
+      // This is the whole point of the simulation: play the candidate.
+      simTrick.push({ playerId: pid, card: candidateCard });
+      continue;
+    }
+    const simHand = simOppHands[pid] || [];
+    if (simHand.length === 0) continue;
     let chosen;
-    if (p.id === aiPlayer.id) {
-      const needed = aiPlayer.bid - aiPlayer.tricks - simTricksWon;
-      chosen = aiOwnSimSelect(simHand, simTrick, trump.suit, needed, simHand.length + 1);
-    } else if (diffCfg.smartSim) {
+    if (diffCfg.smartSim) {
       chosen = heuristicSimSelect(simHand, simTrick, trump.suit);
     } else {
       let legal = getLegalCardsForSimulation(simHand, simTrick, trump.suit);
       if (legal.length === 0) legal = simHand.slice();
-      if (legal.length === 0) return;
+      if (legal.length === 0) continue;
       chosen = legal[Math.floor(Math.random() * legal.length)];
     }
     for (let i = 0; i < simHand.length; i++) {
       if (simHand[i].suit === chosen.suit && simHand[i].rank === chosen.rank) { simHand.splice(i, 1); break; }
     }
-    simTrick.push({ playerId: p.id, card: chosen });
-  });
+    simTrick.push({ playerId: pid, card: chosen });
+  }
 
   if (simTrick.length === 0) return 0;
   let winner = determineTrickWinnerSim(simTrick, trump.suit);
   let tricksWon = (winner === aiPlayer.id) ? 1 : 0;
-  simTricksWon = tricksWon;
 
   let turnOrder = [];
   const si = players.findIndex(p => p.id === winner);
