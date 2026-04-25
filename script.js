@@ -46,6 +46,19 @@ let currentPlayer = null;
 let scoreData = [];
 let playedCardsThisRound = [];
 let turnToken = 0;
+let gameStartTime = null;
+
+/***********************
+ * ANALYTICS (GTM dataLayer)
+ ***********************/
+function trackEvent(event, data) {
+  try {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event, ...(data || {}) });
+  } catch (e) {
+    // No romper el juego si GTM/dataLayer falla o está bloqueado por adblocker
+  }
+}
 
 /***********************
  * FUNCIONES UTILITARIAS
@@ -1334,11 +1347,48 @@ function endRound() {
     summary += p.name + ": " + p.bid + "→" + p.tricks + " ";
   });
   showMessage(summary);
+
+  const human = players.find(p => p.type === "human");
+  const humanPts = human.bid === human.tricks
+    ? (10 + 3 * human.tricks)
+    : (-3 * Math.abs(human.tricks - human.bid));
+  const totalBids = players.reduce((s, p) => s + (p.bid || 0), 0);
+  trackEvent("round_end", {
+    round_index: currentRoundIndex + 1,
+    hand_size: handSize,
+    difficulty,
+    human_bid: human.bid,
+    human_tricks: human.tricks,
+    human_round_points: humanPts,
+    human_total_score: human.score,
+    total_bids: totalBids,
+    completed: true
+  });
+
   if (currentRoundIndex < rounds.length - 1) {
     currentRoundIndex++;
     nextTurnToken();
     setTimeout(startRound, 2500);
   } else {
+    // Partida completada: calcular ranking y métricas agregadas
+    const sorted = players.slice().sort((a, b) => b.score - a.score);
+    let humanRank = 1;
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].id === human.id) { humanRank = i + 1; break; }
+    }
+    const hits = scoreData.reduce((acc, r) => {
+      const pIdx = players.indexOf(human);
+      return acc + (r.results[pIdx].roundPoints > 0 ? 1 : 0);
+    }, 0);
+    const hitRate = scoreData.length > 0 ? hits / scoreData.length : 0;
+    trackEvent("game_end", {
+      difficulty,
+      final_score_human: human.score,
+      human_rank: humanRank,
+      rounds_completed: scoreData.length,
+      duration_ms: gameStartTime ? (Date.now() - gameStartTime) : null,
+      hit_rate_human: Number(hitRate.toFixed(3))
+    });
     showMessage("¡Partida terminada! Pulsa Puntuación para ver los resultados.");
     showScoreboard();
   }
@@ -1472,8 +1522,17 @@ document.querySelectorAll(".dm-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     difficulty = btn.dataset.diff;
     diffCfg = DIFF_CONFIG[difficulty];
-    document.getElementById("difficulty-modal").classList.add("hidden");
+    const modal = document.getElementById("difficulty-modal");
+    const source = modal.classList.contains("dismissible") ? "new_game_modal" : "initial_modal";
+    modal.classList.add("hidden");
+    modal.classList.remove("dismissible");
     document.getElementById("game").style.display = "block";
+    trackEvent("game_start", {
+      difficulty,
+      deck_variant: deckVariant,
+      game_direction: gameDirection,
+      source
+    });
     initGame();
   });
 });
@@ -1601,6 +1660,7 @@ function initGame() {
   currentRoundIndex = 0;
   players.forEach(p => p.score = 0);
   scoreData = [];
+  gameStartTime = Date.now();
   document.getElementById("sim-log-body").innerHTML = "";
   assignAINames();
   startRound();
@@ -1640,6 +1700,13 @@ function startRound() {
   updatePlayerInfo();
   updateHandsDisplay(true);
   showMessage("Triunfo: " + getSuitName(trump.suit) + " — " + cardToText(trump));
+  trackEvent("round_start", {
+    round_index: currentRoundIndex + 1,
+    hand_size: handSize,
+    difficulty,
+    dealer_position: players.find(p => p.id === dealer).position,
+    trump_suit: trump.suit
+  });
   setTimeout(processNextBid, 1000);
 }
 
