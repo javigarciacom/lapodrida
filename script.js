@@ -45,6 +45,7 @@ let currentTrick = [];
 let currentPlayer = null;
 let scoreData = [];
 let playedCardsThisRound = [];
+let turnToken = 0;
 
 /***********************
  * FUNCIONES UTILITARIAS
@@ -1120,8 +1121,26 @@ function updateHandsDisplay(animate) {
 /***********************
  * FUNCIONES DEL JUEGO — LOGICA
  ***********************/
+function nextTurnToken() {
+  turnToken++;
+  return turnToken;
+}
+
+function schedulePlayTurn(delay) {
+  const token = nextTurnToken();
+  setTimeout(() => {
+    if (token !== turnToken || currentPhase !== "playing") return;
+    playTurn(token);
+  }, delay);
+}
+
 function playCard(playerId, cardIndex, fromElement) {
+  if (currentPhase !== "playing" || playerId !== currentPlayer) return false;
+  if (currentTrick.some(item => item.playerId === playerId)) return false;
   const player = players.find(p => p.id === playerId);
+  if (!player || cardIndex < 0 || cardIndex >= player.hand.length) return false;
+  const pendingCard = player.hand[cardIndex];
+  if (!pendingCard || !isLegalPlay(player, pendingCard)) return false;
   const card = player.hand.splice(cardIndex, 1)[0];
   const ANIM_DURATION = 500;
 
@@ -1202,22 +1221,30 @@ function playCard(playerId, cardIndex, fromElement) {
     } else {
       currentPlayer = ((playerId - 1) % players.length + players.length) % players.length;
     }
-    setTimeout(playTurn, ANIM_DURATION + 200);
+    schedulePlayTurn(ANIM_DURATION + 200);
   }
+  return true;
 }
 
-function playTurn() {
+function playTurn(token) {
+  if (token !== undefined && token !== turnToken) return;
+  if (currentPhase !== "playing") return;
   updatePlayerInfo();
-  const p = players.find(p => p.id === currentPlayer);
+  const turnPlayerId = currentPlayer;
+  const p = players.find(p => p.id === turnPlayerId);
+  if (!p || currentTrick.some(item => item.playerId === turnPlayerId)) return;
   if (p.type === "ai") {
     showMessage(p.name + " está jugando...");
+    const aiTurnToken = token !== undefined ? token : turnToken;
     setTimeout(() => {
+      if (aiTurnToken !== turnToken || currentPhase !== "playing" || currentPlayer !== turnPlayerId) return;
+      if (currentTrick.some(item => item.playerId === turnPlayerId)) return;
       const t0 = (typeof window !== "undefined" && window.AI_LATENCY) ? performance.now() : null;
       const chosen = aiSelectCard(p);
       if (t0 !== null) {
         window.AI_LATENCY.push({ kind: "card", handSize, ms: performance.now() - t0 });
       }
-      playCard(currentPlayer, chosen);
+      playCard(turnPlayerId, chosen);
     }, 800);
   } else {
     showMessage("Tu turno — toca una carta resaltada.");
@@ -1283,7 +1310,7 @@ function animateTrickCards(winner) {
     currentTrick = [];
     currentPlayer = winner;
     if (players.find(p => p.id === 0).hand.length > 0) {
-      setTimeout(playTurn, 500);
+      schedulePlayTurn(500);
     } else {
       endRound();
     }
@@ -1309,6 +1336,7 @@ function endRound() {
   showMessage(summary);
   if (currentRoundIndex < rounds.length - 1) {
     currentRoundIndex++;
+    nextTurnToken();
     setTimeout(startRound, 2500);
   } else {
     showMessage("¡Partida terminada! Pulsa Puntuación para ver los resultados.");
@@ -1579,6 +1607,7 @@ function initGame() {
 }
 
 function startRound() {
+  nextTurnToken();
   if (currentRoundIndex === 0) {
     dealer = Math.floor(Math.random() * players.length);
   } else {
@@ -1621,7 +1650,7 @@ function processNextBid() {
     currentPlayer = biddingOrder[0];
     updatePlayerInfo();
     showMessage("Apuestas listas. " + players.find(p => p.id === currentPlayer).name + " empieza.");
-    setTimeout(playTurn, 1000);
+    schedulePlayTurn(1000);
     return;
   }
   const pid = biddingOrder[biddingIndex];
