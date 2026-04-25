@@ -347,30 +347,30 @@ function simulateBid(player) {
   if (diffCfg.smartSim) {
     // Target-aware bidding: for each candidate bid b in [0..handSize], run
     // simsPerTarget rounds where the bidder plays bid-aware for target=b.
-    // Pick the b with the highest hit rate (ties broken by expected score).
-    // Validated in sim/benchmark_unified.py: +5.5 pts/game over mean bidder.
+    // Pick the b with the highest expected score (hits as tiebreak). The
+    // scoring function already rewards higher targets more on a hit
+    // (+10+3·b), so EV-first captures that. Validated in
+    // sim/benchmark_reviewer.py: +8.6 pts/game over hits-first criterion.
     const simsPerTarget = Math.max(30, Math.floor(totalSims / (handSize + 1)));
-    let bestBid = 0, bestHits = -1, bestEV = -Infinity;
+    let bestBid = 0, bestEV = -Infinity, bestHits = -1;
     const logParts = [];
     for (let b = 0; b <= handSize; b++) {
       let hits = 0;
       let ev = 0;
-      const resultFreq = {};
       for (let i = 0; i < simsPerTarget; i++) {
         const result = simulateRoundForBidWithTarget(player, b);
         if (result === b) hits++;
         ev += (result === b) ? (10 + 3 * b) : (-3 * Math.abs(b - result));
-        resultFreq[result] = (resultFreq[result] || 0) + 1;
       }
       ev /= simsPerTarget;
       const hitPct = Math.round(hits * 100 / simsPerTarget);
-      logParts.push(b + "→" + hitPct + "%");
-      if (hits > bestHits || (hits === bestHits && ev > bestEV)) {
-        bestHits = hits; bestEV = ev; bestBid = b;
+      logParts.push(b + "→EV" + ev.toFixed(1) + "/" + hitPct + "%");
+      if (ev > bestEV || (ev === bestEV && hits > bestHits)) {
+        bestEV = ev; bestHits = hits; bestBid = b;
       }
     }
     updateSimLog(player.name + ": R" + (currentRoundIndex + 1) + ", " + handSize +
-                 " cartas, target-aware hits: " + logParts.join(" ") + " → " + bestBid);
+                 " cartas, target-aware: " + logParts.join(" ") + " → " + bestBid);
     return bestBid;
   }
 
@@ -497,6 +497,27 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
     for (let i = 0; i < players.length; i++) turnOrderTrick.push(((leaderIdx - i) % players.length + players.length) % players.length);
   }
   const alreadyPlayed = new Set(simTrick.map(item => item.playerId));
+  // Running count of tricks won by each opponent during this single simulation,
+  // so we can feed bid-aware opponents their live tricksWon (they know their
+  // own bids and play to cook them). Seed from the real game state.
+  const oppSimTricks = {};
+  players.forEach(p => { if (p.id !== aiPlayer.id) oppSimTricks[p.id] = p.tricks; });
+
+  const pickOppCard = (pid, simHand, currentTrickCards) => {
+    if (diffCfg.smartSim) {
+      // Hard mode: opponents play bid-aware with their known bid and their
+      // simulated tricksWon so far. Much more realistic than anonymous
+      // heuristic. Validated (+4.6 pts/game) in sim/benchmark_reviewer.py.
+      const opp = players.find(pp => pp.id === pid);
+      return bidAwarePlay(simHand, currentTrickCards, trump.suit,
+                          opp.bid, oppSimTricks[pid], simHand.length + (currentTrickCards.length === 0 ? 0 : 1));
+    }
+    let legal = getLegalCardsForSimulation(simHand, currentTrickCards, trump.suit);
+    if (legal.length === 0) legal = simHand.slice();
+    if (legal.length === 0) return null;
+    return legal[Math.floor(Math.random() * legal.length)];
+  };
+
   for (const pid of turnOrderTrick) {
     if (alreadyPlayed.has(pid)) continue;
     if (pid === aiPlayer.id) {
@@ -506,15 +527,8 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
     }
     const simHand = simOppHands[pid] || [];
     if (simHand.length === 0) continue;
-    let chosen;
-    if (diffCfg.smartSim) {
-      chosen = heuristicSimSelect(simHand, simTrick, trump.suit);
-    } else {
-      let legal = getLegalCardsForSimulation(simHand, simTrick, trump.suit);
-      if (legal.length === 0) legal = simHand.slice();
-      if (legal.length === 0) continue;
-      chosen = legal[Math.floor(Math.random() * legal.length)];
-    }
+    const chosen = pickOppCard(pid, simHand, simTrick);
+    if (!chosen) continue;
     for (let i = 0; i < simHand.length; i++) {
       if (simHand[i].suit === chosen.suit && simHand[i].rank === chosen.rank) { simHand.splice(i, 1); break; }
     }
@@ -524,6 +538,7 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
   if (simTrick.length === 0) return 0;
   let winner = determineTrickWinnerSim(simTrick, trump.suit);
   let tricksWon = (winner === aiPlayer.id) ? 1 : 0;
+  if (winner !== aiPlayer.id && oppSimTricks[winner] !== undefined) oppSimTricks[winner]++;
 
   let turnOrder = [];
   const si = players.findIndex(p => p.id === winner);
@@ -545,13 +560,8 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
       if (pid === aiPlayer.id) {
         const needed = aiPlayer.bid - aiPlayer.tricks - tricksWon;
         chosen = aiOwnSimSelect(simHand, trick, trump.suit, needed, simHand.length);
-      } else if (diffCfg.smartSim) {
-        chosen = heuristicSimSelect(simHand, trick, trump.suit);
       } else {
-        let legal = getLegalCardsForSimulation(simHand, trick, trump.suit);
-        if (legal.length === 0) legal = simHand.slice();
-        if (legal.length === 0) continue;
-        chosen = legal[Math.floor(Math.random() * legal.length)];
+        chosen = pickOppCard(pid, simHand, trick);
       }
       if (!chosen) continue;
       for (let i = 0; i < simHand.length; i++) {
@@ -562,6 +572,7 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
     if (trick.length === 0) break;
     const tw = determineTrickWinnerSim(trick, trump.suit);
     if (tw === aiPlayer.id) tricksWon++;
+    else if (oppSimTricks[tw] !== undefined) oppSimTricks[tw]++;
     const wi = turnOrder.indexOf(tw);
     turnOrder = turnOrder.slice(wi).concat(turnOrder.slice(0, wi));
   }
