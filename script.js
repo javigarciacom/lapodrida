@@ -118,6 +118,16 @@ function getLegalCardsForSimulation(hand, trick, ts) {
   return hand.slice();
 }
 
+// Same rule but `trick` is an array of Card directly (no {playerId, card}
+// wrapping). Used by the FastPolicy rollouts introduced in iter. 8.
+function getLegalCardsFromCardTrick(hand, trick, ts) {
+  if (trick.length === 0) return hand.slice();
+  const led = trick[0].suit;
+  if (hand.some(c => c.suit === led)) return hand.filter(c => c.suit === led);
+  if (hand.some(c => c.suit === ts))  return hand.filter(c => c.suit === ts);
+  return hand.slice();
+}
+
 // Trump-aware strength: trumps dominate any non-trump card
 function cardStrength(card, ts) {
   return (card.suit === ts ? 100 : 0) + getRankValue(card.rank);
@@ -253,10 +263,11 @@ function fpEstimatePWin(candidate, trickSoFar, ts, remainingAfterMe, unseenCards
   return Math.pow(1.0 - pThreat, threats);
 }
 
-// FastPolicy: deterministic feature-based pick. Weights chosen manually (v0)
+// FastPolicy: deterministic feature-based pick. Weights chosen manually (v0).
+// `trickSoFar` is an array of Card (NOT {playerId, card}).
 function fastPolicyPick(hand, trickSoFar, ts, myBid, myTricksWon, tricksRemaining,
                        trumpCard, playedThisRound) {
-  const legal = getLegalCardsForSimulation(hand, trickSoFar, ts);
+  const legal = getLegalCardsFromCardTrick(hand, trickSoFar, ts);
   if (legal.length === 1) return legal[0];
 
   const tricksNeeded = myBid - myTricksWon;
