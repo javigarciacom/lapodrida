@@ -395,8 +395,17 @@ function simulateBid(player) {
   return chosenBid;
 }
 
+// AI latency instrumentation. Enable by running `window.AI_LATENCY = []` in
+// the browser console before a game. Each decision pushes
+// {kind, handSize, ms} and you can inspect percentiles afterwards with
+// e.g. `AI_LATENCY.filter(x => x.kind === "bid").map(x => x.ms).sort()`.
 function aiComputeBid(pid) {
-  return simulateBid(players.find(p => p.id === pid));
+  const t0 = (typeof window !== "undefined" && window.AI_LATENCY) ? performance.now() : null;
+  const result = simulateBid(players.find(p => p.id === pid));
+  if (t0 !== null) {
+    window.AI_LATENCY.push({ kind: "bid", handSize, ms: performance.now() - t0 });
+  }
+  return result;
 }
 
 // Bid-aware deterministic play for the AI's own future turns inside a simulation.
@@ -969,7 +978,12 @@ function playTurn() {
   if (p.type === "ai") {
     showMessage(p.name + " está jugando...");
     setTimeout(() => {
-      playCard(currentPlayer, aiSelectCard(p));
+      const t0 = (typeof window !== "undefined" && window.AI_LATENCY) ? performance.now() : null;
+      const chosen = aiSelectCard(p);
+      if (t0 !== null) {
+        window.AI_LATENCY.push({ kind: "card", handSize, ms: performance.now() - t0 });
+      }
+      playCard(currentPlayer, chosen);
     }, 800);
   } else {
     showMessage("Tu turno — toca una carta resaltada.");
