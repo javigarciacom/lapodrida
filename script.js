@@ -508,9 +508,15 @@ function simulateRemainingRoundForCard(aiPlayer, candidateIndex) {
       // Hard mode: opponents play bid-aware with their known bid and their
       // simulated tricksWon so far. Much more realistic than anonymous
       // heuristic. Validated (+4.6 pts/game) in sim/benchmark_reviewer.py.
+      //
+      // tricksRemaining = plays this opponent has left in the round,
+      // including the current one. simHand.length already counts the
+      // about-to-be-played card (card is removed *after* pickOppCard
+      // returns), so no +1 adjustment is needed regardless of whether
+      // the trick has already been opened.
       const opp = players.find(pp => pp.id === pid);
       return bidAwarePlay(simHand, currentTrickCards, trump.suit,
-                          opp.bid, oppSimTricks[pid], simHand.length + (currentTrickCards.length === 0 ? 0 : 1));
+                          opp.bid, oppSimTricks[pid], simHand.length);
     }
     let legal = getLegalCardsForSimulation(simHand, currentTrickCards, trump.suit);
     if (legal.length === 0) legal = simHand.slice();
