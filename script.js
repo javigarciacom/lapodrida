@@ -169,6 +169,73 @@ function heuristicSimSelect(hand, trick, ts) {
   return legal[Math.floor(Math.random() * legal.length)];
 }
 
+// Bid-aware deterministic play for hard-mode bid simulation. The bidder
+// assumes a specific target and plays tactically to hit it exactly.
+// Matches the `bid_aware_play` policy validated in sim/target_aware_experiment.py.
+function bidAwarePlay(hand, trick, ts, target, tricksWon, tricksRemaining) {
+  const legal = getLegalCardsForSimulation(hand, trick, ts);
+  if (legal.length <= 1) return legal[0];
+  const tricksNeeded = target - tricksWon;
+  const slack = tricksRemaining - tricksNeeded;
+
+  if (trick.length === 0) {
+    // Leading
+    if (tricksNeeded >= tricksRemaining) {
+      // Must win every remaining trick: lead strongest (arrastrar triunfo)
+      return legal.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+    }
+    if (tricksNeeded <= 0) {
+      // Don't want any more tricks: shed highest non-trump first
+      const nonTrump = legal.filter(c => c.suit !== ts);
+      if (nonTrump.length > 0) {
+        return nonTrump.reduce((a, b) => getRankValue(a.rank) >= getRankValue(b.rank) ? a : b);
+      }
+      return legal.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+    }
+    // In between: if I hold a near-sure winner (1 or 3 of trump) and have
+    // slack, burn a high non-trump first and save the sure winner for later.
+    const sureWinner = legal.some(c => c.suit === ts && getRankValue(c.rank) >= 11);
+    const nonTrump = legal.filter(c => c.suit !== ts);
+    if (sureWinner && slack >= 1 && nonTrump.length > 0) {
+      return nonTrump.reduce((a, b) => getRankValue(a.rank) >= getRankValue(b.rank) ? a : b);
+    }
+    return legal.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+  }
+
+  // Following: determine who is currently winning
+  const ledSuit = trick[0].card.suit;
+  let bestCard = trick[0].card;
+  trick.forEach(play => {
+    if (play.card.suit === ts) {
+      if (bestCard.suit !== ts || getRankValue(play.card.rank) > getRankValue(bestCard.rank))
+        bestCard = play.card;
+    } else if (bestCard.suit !== ts && play.card.suit === ledSuit) {
+      if (getRankValue(play.card.rank) > getRankValue(bestCard.rank))
+        bestCard = play.card;
+    }
+  });
+  const beats = c => {
+    if (c.suit === ts && bestCard.suit !== ts) return true;
+    if (c.suit === ts && bestCard.suit === ts) return getRankValue(c.rank) > getRankValue(bestCard.rank);
+    if (c.suit === ledSuit && bestCard.suit !== ts) return getRankValue(c.rank) > getRankValue(bestCard.rank);
+    return false;
+  };
+  const winners = legal.filter(beats);
+  const losers = legal.filter(c => !beats(c));
+
+  if (tricksNeeded > 0) {
+    if (winners.length > 0) {
+      return winners.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+    }
+    return losers.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+  }
+  // No more tricks wanted: dump highest loser while we can
+  if (losers.length > 0) {
+    return losers.reduce((a, b) => cardStrength(a, ts) >= cardStrength(b, ts) ? a : b);
+  }
+  return winners.reduce((a, b) => cardStrength(a, ts) <= cardStrength(b, ts) ? a : b);
+}
+
 function determineTrickWinnerSim(trick, ts) {
   const led = trick[0].card.suit;
   let winning = trick[0];
@@ -229,44 +296,98 @@ function simulateRoundForBid(player) {
   return tricksWon;
 }
 
+// Hard-mode bid simulation with a specific target: the bidder plays
+// bid-aware for that target, opponents play the usual heuristic.
+// Returns how many tricks the bidder actually ended up with.
+function simulateRoundForBidWithTarget(player, target) {
+  let deckSim = createDeck().filter(c => !(c.suit === trump.suit && c.rank === trump.rank));
+  player.hand.forEach(c => { deckSim = deckSim.filter(d => !(d.suit === c.suit && d.rank === c.rank)); });
+  const simHands = {};
+  simHands[player.id] = player.hand.slice();
+  players.forEach(p => {
+    if (p.id !== player.id) {
+      simHands[p.id] = [];
+      for (let i = 0; i < handSize; i++) {
+        const idx = Math.floor(Math.random() * deckSim.length);
+        simHands[p.id].push(deckSim[idx]);
+        deckSim.splice(idx, 1);
+      }
+    }
+  });
+  const simOrder = biddingOrder.slice();
+  const copy = JSON.parse(JSON.stringify(simHands));
+  let tricksWon = 0;
+  for (let t = 0; t < handSize; t++) {
+    const trick = [];
+    const tricksRemaining = handSize - t;
+    simOrder.forEach(pid => {
+      const hand = copy[pid];
+      let chosen;
+      if (pid === player.id) {
+        chosen = bidAwarePlay(hand, trick, trump.suit, target, tricksWon, tricksRemaining);
+      } else {
+        chosen = heuristicSimSelect(hand, trick, trump.suit);
+      }
+      const idx = hand.findIndex(c => c.suit === chosen.suit && c.rank === chosen.rank);
+      if (idx >= 0) hand.splice(idx, 1);
+      trick.push({ playerId: pid, card: chosen });
+    });
+    const winner = determineTrickWinnerSim(trick, trump.suit);
+    if (winner === player.id) tricksWon++;
+    const wi = simOrder.indexOf(winner);
+    const rotated = simOrder.slice(wi).concat(simOrder.slice(0, wi));
+    simOrder.length = 0; rotated.forEach(x => simOrder.push(x));
+  }
+  return tricksWon;
+}
+
 function simulateBid(player) {
-  const sims = diffCfg.bidSims;
+  const totalSims = diffCfg.bidSims;
+
+  if (diffCfg.smartSim) {
+    // Target-aware bidding: for each candidate bid b in [0..handSize], run
+    // simsPerTarget rounds where the bidder plays bid-aware for target=b.
+    // Pick the b with the highest hit rate (ties broken by expected score).
+    // Validated in sim/benchmark_unified.py: +5.5 pts/game over mean bidder.
+    const simsPerTarget = Math.max(30, Math.floor(totalSims / (handSize + 1)));
+    let bestBid = 0, bestHits = -1, bestEV = -Infinity;
+    const logParts = [];
+    for (let b = 0; b <= handSize; b++) {
+      let hits = 0;
+      let ev = 0;
+      const resultFreq = {};
+      for (let i = 0; i < simsPerTarget; i++) {
+        const result = simulateRoundForBidWithTarget(player, b);
+        if (result === b) hits++;
+        ev += (result === b) ? (10 + 3 * b) : (-3 * Math.abs(b - result));
+        resultFreq[result] = (resultFreq[result] || 0) + 1;
+      }
+      ev /= simsPerTarget;
+      const hitPct = Math.round(hits * 100 / simsPerTarget);
+      logParts.push(b + "→" + hitPct + "%");
+      if (hits > bestHits || (hits === bestHits && ev > bestEV)) {
+        bestHits = hits; bestEV = ev; bestBid = b;
+      }
+    }
+    updateSimLog(player.name + ": R" + (currentRoundIndex + 1) + ", " + handSize +
+                 " cartas, target-aware hits: " + logParts.join(" ") + " → " + bestBid);
+    return bestBid;
+  }
+
+  // Easy/medium: legacy mode — greedy opponents, pick distribution mode.
   const freq = {};
-  for (let i = 0; i < sims; i++) {
+  for (let i = 0; i < totalSims; i++) {
     const tricks = simulateRoundForBid(player);
     freq[tricks] = (freq[tricks] || 0) + 1;
   }
-
-  // Pick bid: hard mode uses the rounded mean of the simulated trick
-  // distribution. Validated against a Python simulator (see sim/): beats
-  // both mode and EV-maximisation across every hand size 1..5, most
-  // noticeably on 4- and 5-card rounds where the distribution has a right
-  // tail that mode/EV systematically undercount. Easy/medium keep the
-  // legacy mode behaviour.
-  let chosenBid;
-  if (diffCfg.smartSim) {
-    let total = 0, count = 0;
-    for (const key in freq) {
-      const tricks = parseInt(key);
-      total += tricks * freq[key];
-      count += freq[key];
-    }
-    const mean = count > 0 ? total / count : 0;
-    chosenBid = Math.max(0, Math.min(handSize, Math.round(mean)));
-  } else {
-    let mode = 0, maxCount = 0;
-    for (const key in freq) {
-      if (freq[key] > maxCount) { maxCount = freq[key]; mode = parseInt(key); }
-    }
-    chosenBid = mode;
+  let mode = 0, maxCount = 0;
+  for (const key in freq) {
+    if (freq[key] > maxCount) { maxCount = freq[key]; mode = parseInt(key); }
   }
-
-  // Log
+  let chosenBid = mode;
   const parts = [];
   for (let i = 0; i <= handSize; i++) parts.push((freq[i] || 0) + " de " + i);
   updateSimLog(player.name + ": R" + (currentRoundIndex + 1) + ", " + handSize + " cartas, " + parts.join(", "));
-
-  // Difficulty: bid noise (easy only)
   if (diffCfg.bidNoise > 0 && Math.random() < diffCfg.bidNoise) {
     const delta = Math.random() < 0.5 ? 1 : -1;
     chosenBid = Math.max(0, Math.min(handSize, chosenBid + delta));
