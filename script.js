@@ -1185,7 +1185,7 @@ function hideScoreboard() {
 /***********************
  * EVENTOS
  ***********************/
-// Difficulty modal
+// Difficulty modal — selecting a difficulty always starts a fresh game
 document.querySelectorAll(".dm-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     difficulty = btn.dataset.diff;
@@ -1196,11 +1196,21 @@ document.querySelectorAll(".dm-btn").forEach(btn => {
   });
 });
 
-// New game
-document.getElementById("new-game").addEventListener("click", () => {
-  document.getElementById("game").style.display = "none";
-  document.getElementById("difficulty-modal").classList.remove("hidden");
-});
+// Nueva Partida button: open the difficulty modal over the current game.
+// Unlike the initial launch, the modal here is dismissible (X closes it
+// without starting a new game, so the player can resume the current one).
+function openNewGameModal() {
+  const modal = document.getElementById("difficulty-modal");
+  modal.classList.add("dismissible");
+  modal.classList.remove("hidden");
+}
+function closeNewGameModal() {
+  const modal = document.getElementById("difficulty-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("dismissible");
+}
+document.getElementById("new-game").addEventListener("click", openNewGameModal);
+document.getElementById("difficulty-close").addEventListener("click", closeNewGameModal);
 
 // Scoreboard
 document.getElementById("scoreboard-button").addEventListener("click", showScoreboard);
@@ -1209,6 +1219,82 @@ document.getElementById("scoreboard-close").addEventListener("click", hideScoreb
 // Sim log close (log kept but inaccessible — no toggle button)
 document.getElementById("sim-log-close").addEventListener("click", () => {
   document.getElementById("sim-log").classList.remove("show");
+});
+
+/***********************
+ * KEYBOARD SHORTCUTS
+ ***********************
+ *   0..5  → bid (during bidding phase, if it's the human's turn)
+ *   1..5  → play the Nth card from the left (during play phase)
+ *   n     → open "Nueva Partida" modal
+ *   p     → open scoreboard
+ *   x / Esc → close any open modal
+ *
+ * 0..5 and 1..5 overlap: we disambiguate by current game phase (bidding
+ * vs playing). 0 never triggers a card play.
+ */
+function anyModalOpen() {
+  const diff = document.getElementById("difficulty-modal");
+  const score = document.getElementById("scoreboard-overlay");
+  return (diff && !diff.classList.contains("hidden")) ||
+         (score && score.classList.contains("show"));
+}
+function closeAllModals() {
+  const diff = document.getElementById("difficulty-modal");
+  if (diff && !diff.classList.contains("hidden") && diff.classList.contains("dismissible")) {
+    closeNewGameModal();
+  }
+  hideScoreboard();
+}
+function triggerHumanBid(n) {
+  const btns = document.querySelectorAll("#bid-area .bid-button");
+  if (n < 0 || n >= btns.length) return;
+  btns[n].click();
+}
+function triggerHumanPlay(cardIndex) {
+  // cardIndex is 0-based; .valid cards are the playable ones
+  const cards = document.querySelectorAll("#player-hand .card");
+  if (cardIndex < 0 || cardIndex >= cards.length) return;
+  const card = cards[cardIndex];
+  if (!card.classList.contains("valid")) return;
+  card.click();
+}
+
+document.addEventListener("keydown", (e) => {
+  // Ignore if the user is typing in an input
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+  // Ignore modifier combos (let browser shortcuts pass through)
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  const key = e.key;
+
+  // Close shortcuts first — they work regardless of game state
+  if (key === "Escape" || key === "x" || key === "X") {
+    if (anyModalOpen()) { closeAllModals(); e.preventDefault(); }
+    return;
+  }
+  // If any modal is open, swallow other shortcuts (don't bid/play behind it)
+  if (anyModalOpen()) return;
+
+  if (key === "n" || key === "N") { openNewGameModal(); e.preventDefault(); return; }
+  if (key === "p" || key === "P") { showScoreboard(); e.preventDefault(); return; }
+
+  // Numeric keys: bid (0..N) or play card (1..N) depending on phase
+  if (key >= "0" && key <= "9") {
+    const n = parseInt(key, 10);
+    const human = players.find(p => p.type === "human");
+    if (!human) return;
+    if (currentPhase === "bidding"
+        && biddingIndex < biddingOrder.length
+        && biddingOrder[biddingIndex] === human.id) {
+      triggerHumanBid(n);  // 0-based index into bid buttons (0..handSize)
+      e.preventDefault();
+    } else if (currentPhase === "playing" && currentPlayer === human.id && n >= 1) {
+      triggerHumanPlay(n - 1);  // 1..5 → index 0..4
+      e.preventDefault();
+    }
+  }
 });
 
 // Human card click
