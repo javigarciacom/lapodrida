@@ -1,4 +1,4 @@
-# Roadmap de analítica con Google Tag Manager
+# Roadmap de analítica con Google Analytics 4
 
 ## Objetivo
 
@@ -13,36 +13,35 @@ movimiento en ruido. La analítica debe responder preguntas prácticas:
 - ¿El modo difícil y los cambios de IA mejoran retención o finalización?
 - ¿Hay señales de errores de flujo, como rondas bloqueadas o estados anómalos?
 
-## Instalación GTM
+## Instalación GA4
 
-Container actual:
+Measurement ID actual:
 
 ```txt
-GTM-PSV6VVZG
+G-Q4KEKCL8BP
 ```
 
-Pendiente de implementar en `index.html`:
+Implementado en `index.html`:
 
-1. Insertar el script oficial de GTM lo más arriba posible dentro de `<head>`.
-2. Insertar el fallback `<noscript>` oficial justo después de abrir `<body>`.
-3. Crear helper JS seguro:
+1. Insertar el script oficial de `gtag.js` dentro de `<head>`.
+2. Configurar GA4 con el measurement ID `G-Q4KEKCL8BP`.
+3. Crear helper JS seguro que no rompa el juego si GA4 está bloqueado:
 
 ```js
 function trackEvent(event, data) {
-  window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push({ event, ...data });
+  if (typeof window.gtag !== "function") return;
+  window.gtag("event", event, data || {});
 }
 ```
 
 4. No enviar nombres de jugadores IA, cartas exactas ni datos identificables.
-5. Antes de activar tags de analytics para usuarios UE, implementar el aviso de cookies/consentimiento o documentar que la medición queda dentro de la exención de medición de audiencia de la AEPD.
+5. Antes de medir usuarios UE en producción, implementar el aviso de cookies/consentimiento o documentar que la medición queda dentro de la exención de medición de audiencia de la AEPD.
 
 ## Cookies y consentimiento
 
-Si GTM solo está instalado pero no dispara tags que escriban o lean cookies no
-técnicas, puede cargarse como infraestructura. En cuanto se active GA4 u otro
-tag de analytics que use cookies/identificadores, hay que resolver el
-consentimiento antes de enviar medición completa.
+GA4 puede escribir o leer cookies/identificadores para analítica. Para usuarios
+UE, hay que resolver el consentimiento antes de enviar medición completa, salvo
+que se documente una configuración exenta y validada.
 
 Tarea previa a producción:
 
@@ -51,13 +50,13 @@ Tarea previa a producción:
 3. Cargar GA4/analytics solo tras consentimiento, salvo que se documente una configuración exenta.
 4. Incluir política de cookies/privacidad con finalidad, proveedor, duración y retirada del consentimiento.
 5. Guardar la preferencia del usuario sin romper la partida ni bloquear el juego si rechaza analytics.
-6. Verificar en GTM Preview y navegador que antes de aceptar no se crean cookies analíticas ni se envían eventos completos.
+6. Verificar en GA4 DebugView y navegador que antes de aceptar no se crean cookies analíticas ni se envían eventos completos.
 
 Nota legal de implementación:
 La AEPD contempla una posible exención para cookies de medición de audiencia,
 pero exige finalidad limitada a estadísticas anónimas del editor, sin cruce con
 otros tratamientos, sin transmisión a terceros para finalidades propias y con
-garantías de duración/conservación. Si se usa GA4 estándar desde GTM, tratarlo
+garantías de duración/conservación. Si se usa GA4 estándar, tratarlo
 como no exento salvo validación específica.
 
 ## Eventos Prioritarios
@@ -332,11 +331,11 @@ No enviar mano, carta exacta ni nombre del usuario.
 
 ### Fase 1: Base
 
-1. Instalar GTM en `index.html`.
+1. Instalar GA4 `gtag.js` en `index.html`.
 2. Añadir aviso de cookies/consentimiento y Consent Mode si se activa GA4/analytics.
 3. Añadir `trackEvent()`.
 4. Enviar `game_start`, `round_start`, `round_end`, `game_end`.
-5. Validar en GTM Preview y GA4 DebugView.
+5. Validar en GA4 Realtime y DebugView.
 
 ### Fase 2: UX
 
@@ -358,12 +357,12 @@ No enviar mano, carta exacta ni nombre del usuario.
 
 ## Criterios de Aceptación
 
-- GTM carga en GitHub Pages.
+- GA4 `gtag.js` carga en GitHub Pages.
 - `game_start` aparece una vez por partida iniciada.
 - `game_end` aparece solo al terminar la partida.
 - `round_start` y `round_end` aparecen 16 veces en una partida completa.
 - No se registran cartas exactas ni nombres libres.
-- Los eventos no rompen el juego si GTM está bloqueado por adblocker.
+- Los eventos no rompen el juego si GA4 está bloqueado por adblocker.
 - No hay eventos duplicados al abrir/cerrar modales o reiniciar partida.
 - Antes de aceptar cookies, no se crean cookies analíticas ni se envían eventos completos de GA4.
 - Rechazar cookies mantiene el juego usable y evita analytics no exento.

@@ -49,14 +49,14 @@ let turnToken = 0;
 let gameStartTime = null;
 
 /***********************
- * ANALYTICS (GTM dataLayer)
+ * ANALYTICS (GA4 gtag.js)
  ***********************/
 function trackEvent(event, data) {
   try {
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ event, ...(data || {}) });
+    if (typeof window.gtag !== "function") return;
+    window.gtag("event", event, data || {});
   } catch (e) {
-    // No romper el juego si GTM/dataLayer falla o está bloqueado por adblocker
+    // No romper el juego si GA4 falla o está bloqueado por adblocker
   }
 }
 
