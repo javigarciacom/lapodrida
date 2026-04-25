@@ -172,6 +172,226 @@ function heuristicSimSelect(hand, trick, ts) {
 // Bid-aware deterministic play for hard-mode bid simulation. The bidder
 // assumes a specific target and plays tactically to hit it exactly.
 // Matches the `bid_aware_play` policy validated in sim/target_aware_experiment.py.
+/***********************
+ * FAST POLICY (iteración 8)
+ *
+ * Deterministic feature-based card-selection policy shared between bid
+ * simulation and (eventually) card play. The key benefit over bidAwarePlay
+ * is that it uses visible cards to estimate the probability of winning
+ * the current trick, so the bidder's simulation models what the player
+ * will actually be able to execute.
+ *
+ * Validated in sim/benchmark_latency_matched.py: BF_B (FastPolicy-based
+ * bid + existing aiSelectCard for play) gives +6 pts/game over V3 while
+ * halving bid latency on hs=5 (106ms → 52ms in browser).
+ ***********************/
+
+// Cards that could still be in opponents' hands. Excludes own hand,
+// trump card, played_this_round, and the current trick.
+function fpUnseenCards(myHand, trumpCard, playedThisRound, trickSoFar) {
+  const seen = new Set();
+  const key = c => c.suit + "|" + c.rank;
+  myHand.forEach(c => seen.add(key(c)));
+  if (trumpCard) seen.add(key(trumpCard));
+  playedThisRound.forEach(c => seen.add(key(c)));
+  trickSoFar.forEach(c => seen.add(key(c)));
+  const deck = createDeck();
+  return deck.filter(c => !seen.has(key(c)));
+}
+
+// Current winning card in the trick (null if trick empty)
+function fpCurrentWinningCard(trickSoFar, ts) {
+  if (trickSoFar.length === 0) return null;
+  const led = trickSoFar[0].suit;
+  let best = trickSoFar[0];
+  for (let i = 1; i < trickSoFar.length; i++) {
+    const c = trickSoFar[i];
+    if (c.suit === ts) {
+      if (best.suit !== ts || getRankValue(c.rank) > getRankValue(best.rank)) best = c;
+    } else if (best.suit !== ts && c.suit === led) {
+      if (getRankValue(c.rank) > getRankValue(best.rank)) best = c;
+    }
+  }
+  return best;
+}
+
+// Probability estimate that `candidate` wins the trick if played now,
+// given unseen cards and how many opponents still have to play.
+function fpEstimatePWin(candidate, trickSoFar, ts, remainingAfterMe, unseenCards) {
+  // Determine what becomes the "card to beat" after my play
+  const ledSuit = trickSoFar.length > 0 ? trickSoFar[0].suit : candidate.suit;
+  const currentWinner = fpCurrentWinningCard(trickSoFar, ts);
+  let targetCard, targetSuit;
+  if (candidate.suit === ts && (!currentWinner || currentWinner.suit !== ts)) {
+    targetCard = candidate; targetSuit = ts;
+  } else if (!currentWinner) {
+    targetCard = candidate; targetSuit = candidate.suit;
+  } else if (currentWinner.suit === ts && candidate.suit === ts &&
+             getRankValue(candidate.rank) > getRankValue(currentWinner.rank)) {
+    targetCard = candidate; targetSuit = ts;
+  } else if (currentWinner.suit !== ts && candidate.suit === ledSuit &&
+             getRankValue(candidate.rank) > getRankValue(currentWinner.rank)) {
+    targetCard = candidate; targetSuit = ledSuit;
+  } else {
+    return 0.0;
+  }
+
+  if (remainingAfterMe <= 0) return 1.0;
+
+  // Count threats
+  let threats = 0;
+  for (const c of unseenCards) {
+    if (targetSuit === ts) {
+      if (c.suit === ts && getRankValue(c.rank) > getRankValue(targetCard.rank)) threats++;
+    } else {
+      if (c.suit === ts) threats++;
+      else if (c.suit === targetSuit && getRankValue(c.rank) > getRankValue(targetCard.rank)) threats++;
+    }
+  }
+  if (unseenCards.length === 0) return 1.0;
+  const pThreat = Math.min(1.0, remainingAfterMe / Math.max(1, players.length - 1));
+  return Math.pow(1.0 - pThreat, threats);
+}
+
+// FastPolicy: deterministic feature-based pick. Weights chosen manually (v0)
+function fastPolicyPick(hand, trickSoFar, ts, myBid, myTricksWon, tricksRemaining,
+                       trumpCard, playedThisRound) {
+  const legal = getLegalCardsForSimulation(hand, trickSoFar, ts);
+  if (legal.length === 1) return legal[0];
+
+  const tricksNeeded = myBid - myTricksWon;
+  const needWin = tricksNeeded > 0;
+  const avoidWin = tricksNeeded <= 0;
+  const mustWinAll = tricksNeeded >= tricksRemaining;
+  const slack = tricksRemaining - tricksNeeded;
+  const remainingAfterMe = (players.length - 1) - trickSoFar.length;
+  const unseen = fpUnseenCards(hand, trumpCard, playedThisRound, trickSoFar);
+
+  // Precompute "we hold a sure winner somewhere in our hand"
+  let weHaveSureWinner = false;
+  for (const c of hand) {
+    if (c.suit === ts && getRankValue(c.rank) >= 11) { weHaveSureWinner = true; break; }
+  }
+
+  // Hand-tuned feature weights (FastPolicy v0)
+  const W = {
+    alignNeed: 10.0, alignAvoid: 10.0,
+    wasteTrump: 3.0, shedDanger: 2.0,
+    saveSureWinner: 8.0, savePreserve: 2.0,
+    cheapWinner: 1.5,
+  };
+
+  let bestCard = null, bestScore = -Infinity;
+  for (const c of legal) {
+    let score = 0;
+    const pWin = fpEstimatePWin(c, trickSoFar, ts, remainingAfterMe, unseen);
+
+    if (mustWinAll) {
+      score += W.alignNeed * (1.5 * pWin) + 0.01 * cardStrength(c, ts);
+    } else if (needWin) {
+      score += W.alignNeed * pWin;
+      score -= W.cheapWinner * (cardStrength(c, ts) / 112.0) * pWin;
+    } else if (avoidWin) {
+      score -= W.alignAvoid * pWin;
+      if (trickSoFar.length === 0 && c.suit !== ts && getRankValue(c.rank) >= 10) {
+        score += W.shedDanger;
+      }
+      if (c.suit === ts) score -= W.wasteTrump * (getRankValue(c.rank) / 12.0);
+    } else {
+      score -= 0.5 * pWin;
+    }
+
+    const sureWinnerHere = c.suit === ts && getRankValue(c.rank) >= 11;
+    if (sureWinnerHere && slack >= 1 && !mustWinAll) {
+      score -= W.saveSureWinner;
+    }
+    if (!sureWinnerHere && weHaveSureWinner && slack >= 1 && !mustWinAll) {
+      score += W.savePreserve;
+    }
+
+    if (score > bestScore) { bestScore = score; bestCard = c; }
+  }
+  return bestCard || legal[0];
+}
+
+/***********************
+ * BID SIMULATION USING FASTPOLICY (iteración 8)
+ *
+ * One rollout of a full round where every seat (including the bidder)
+ * plays with fastPolicyPick. The bidder uses target=target; opponents
+ * use their real bid if already declared, or a rough guess otherwise.
+ * Returns tricks won by the bidder in this rollout.
+ ***********************/
+function simulateRoundForBidBF(player, target) {
+  // Build random hands for opponents from unseen deck
+  const excluded = new Set();
+  const key = c => c.suit + "|" + c.rank;
+  excluded.add(key(trump));
+  player.hand.forEach(c => excluded.add(key(c)));
+  const deckPool = createDeck().filter(c => !excluded.has(key(c)));
+  // Shuffle
+  for (let i = deckPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deckPool[i], deckPool[j]] = [deckPool[j], deckPool[i]];
+  }
+
+  const simHands = {};
+  simHands[player.id] = player.hand.slice();
+  let idx = 0;
+  for (const p of players) {
+    if (p.id === player.id) continue;
+    simHands[p.id] = deckPool.slice(idx, idx + handSize);
+    idx += handSize;
+  }
+
+  // Figure out which opponent bids are known (those that already bid this round)
+  const oppBidKnown = {};
+  for (let i = 0; i < biddingIndex; i++) {
+    const pid = biddingOrder[i];
+    if (pid !== player.id) {
+      const p = players.find(pp => pp.id === pid);
+      if (p && p.bid !== null) oppBidKnown[pid] = p.bid;
+    }
+  }
+  const defaultOppBid = Math.max(0, Math.floor(handSize / players.length));
+  const oppBid = (pid) => oppBidKnown.hasOwnProperty(pid) ? oppBidKnown[pid] : defaultOppBid;
+
+  // Play the full round
+  const tricksWon = {};
+  players.forEach(p => tricksWon[p.id] = 0);
+  // Start leader is the first in biddingOrder (same as simulateRoundForBidWithTarget)
+  let simOrder = biddingOrder.slice();
+  const simPlayed = [];
+
+  for (let t = 0; t < handSize; t++) {
+    const tricksRemaining = handSize - t;
+    const trickCards = [];
+    for (const pid of simOrder) {
+      const hand = simHands[pid];
+      if (hand.length === 0) continue;
+      const bid = (pid === player.id) ? target : oppBid(pid);
+      const chosen = fastPolicyPick(
+        hand, trickCards, trump.suit,
+        bid, tricksWon[pid], tricksRemaining,
+        trump, simPlayed,
+      );
+      const ix = hand.findIndex(c => c.suit === chosen.suit && c.rank === chosen.rank);
+      if (ix >= 0) hand.splice(ix, 1);
+      trickCards.push(chosen);
+    }
+    // Wrap trickCards into {playerId, card} for determineTrickWinnerSim
+    const trick = trickCards.map((c, i) => ({ playerId: simOrder[i], card: c }));
+    const winner = determineTrickWinnerSim(trick, trump.suit);
+    tricksWon[winner]++;
+    // Record plays this round (for FastPolicy unseen-cards context next trick)
+    trickCards.forEach(c => simPlayed.push(c));
+    // Rotate simOrder so winner leads next
+    const wi = simOrder.indexOf(winner);
+    simOrder = simOrder.slice(wi).concat(simOrder.slice(0, wi));
+  }
+  return tricksWon[player.id];
+}
+
 function bidAwarePlay(hand, trick, ts, target, tricksWon, tricksRemaining) {
   const legal = getLegalCardsForSimulation(hand, trick, ts);
   if (legal.length <= 1) return legal[0];
@@ -345,20 +565,23 @@ function simulateBid(player) {
   const totalSims = diffCfg.bidSims;
 
   if (diffCfg.smartSim) {
-    // Target-aware bidding: for each candidate bid b in [0..handSize], run
-    // simsPerTarget rounds where the bidder plays bid-aware for target=b.
-    // Pick the b with the highest expected score (hits as tiebreak). The
-    // scoring function already rewards higher targets more on a hit
-    // (+10+3·b), so EV-first captures that. Validated in
-    // sim/benchmark_reviewer.py: +8.6 pts/game over hits-first criterion.
-    const simsPerTarget = Math.max(30, Math.floor(totalSims / (handSize + 1)));
+    // BeliefFast target-aware bidding (iteración 8): for each candidate bid
+    // b in [0..handSize], run simsPerTarget rollouts using FastPolicy for
+    // every seat (bidder with target=b, opponents with their known bid).
+    // Pick the b with the highest expected score (hits as tiebreak).
+    //
+    // simsPerTarget = 30 matches the winning point in
+    // sim/benchmark_latency_matched.py (BF_B total_sims=60 → per_b=30),
+    // which validated at +6 pts/game over V3 and halved bid latency
+    // (106ms → 52ms p95 on hs=5 in Chrome).
+    const simsPerTarget = 30;
     let bestBid = 0, bestEV = -Infinity, bestHits = -1;
     const logParts = [];
     for (let b = 0; b <= handSize; b++) {
       let hits = 0;
       let ev = 0;
       for (let i = 0; i < simsPerTarget; i++) {
-        const result = simulateRoundForBidWithTarget(player, b);
+        const result = simulateRoundForBidBF(player, b);
         if (result === b) hits++;
         ev += (result === b) ? (10 + 3 * b) : (-3 * Math.abs(b - result));
       }
@@ -370,7 +593,7 @@ function simulateBid(player) {
       }
     }
     updateSimLog(player.name + ": R" + (currentRoundIndex + 1) + ", " + handSize +
-                 " cartas, target-aware: " + logParts.join(" ") + " → " + bestBid);
+                 " cartas, BF target-aware: " + logParts.join(" ") + " → " + bestBid);
     return bestBid;
   }
 
