@@ -76,12 +76,36 @@ Propiedades:
   difficulty,
   deck_variant: deckVariant,
   game_direction: gameDirection,
-  source: "initial_modal" | "new_game_modal"
+  source: "initial_modal" | "new_game_modal",
+  game_sequence,
+  is_repeat_game,
+  previous_game_abandoned
 }
 ```
 
 Uso:
 Medir starts por dificultad y cuántas veces se reinicia.
+
+### 1b. `difficulty_selected`
+
+Cuándo:
+Cuando el usuario pulsa una dificultad en el modal.
+
+Propiedades:
+
+```js
+{
+  difficulty,
+  source: "initial_modal" | "new_game_modal",
+  game_sequence,
+  is_repeat_game,
+  previous_game_abandoned
+}
+```
+
+Uso:
+Medir elección de dificultad, incluyendo segundas o terceras partidas dentro
+de la misma sesión.
 
 ### 2. `round_start`
 
@@ -98,6 +122,8 @@ Propiedades:
   round_index: currentRoundIndex + 1,
   hand_size: handSize,
   difficulty,
+  game_sequence,
+  is_repeat_game,
   dealer_position: players.find(p => p.id === dealer).position,
   trump_suit: trump.suit
 }
@@ -121,6 +147,8 @@ Propiedades:
   round_index: currentRoundIndex + 1,
   hand_size: handSize,
   difficulty,
+  game_sequence,
+  is_repeat_game,
   human_bid: players[2].bid,
   human_tricks: players[2].tricks,
   human_round_points: pts,
@@ -149,7 +177,17 @@ Propiedades:
 ```js
 {
   difficulty,
+  game_sequence,
+  is_repeat_game,
   final_score_human,
+  final_score_north,
+  final_score_east,
+  final_score_south,
+  final_score_west,
+  final_rank_north,
+  final_rank_east,
+  final_rank_south,
+  final_rank_west,
   human_rank,
   rounds_completed: rounds.length,
   duration_ms,
@@ -160,8 +198,36 @@ Propiedades:
 Uso:
 Evento principal de conversión: partida completada.
 
-Pendiente:
-Guardar `gameStartTime` en `initGame()`.
+Implementado:
+`gameStartTime` se guarda en `initGame()` para calcular `duration_ms`.
+
+### 4b. `game_abandon`
+
+Cuándo:
+Cuando el usuario abandona una partida sin terminar, ya sea cerrando/saliendo
+de la página o iniciando una nueva partida desde el modal.
+
+Propiedades:
+
+```js
+{
+  reason: "pagehide" | "new_game",
+  difficulty,
+  game_sequence,
+  is_repeat_game,
+  current_round_index,
+  rounds_completed,
+  hand_size,
+  phase,
+  human_total_score,
+  duration_ms,
+  transport_type: "beacon"
+}
+```
+
+Uso:
+Saber en qué ronda se abandona y distinguir abandono real de reinicio dentro de
+la misma sesión.
 
 ### 5. `human_bid`
 
@@ -334,7 +400,7 @@ No enviar mano, carta exacta ni nombre del usuario.
 1. Instalar GA4 `gtag.js` en `index.html`.
 2. Añadir aviso de cookies/consentimiento y Consent Mode si se activa GA4/analytics.
 3. Añadir `trackEvent()`.
-4. Enviar `game_start`, `round_start`, `round_end`, `game_end`.
+4. Enviar `difficulty_selected`, `game_start`, `round_start`, `round_end`, `game_end`, `game_abandon`.
 5. Validar en GA4 Realtime y DebugView.
 
 ### Fase 2: UX
@@ -359,8 +425,11 @@ No enviar mano, carta exacta ni nombre del usuario.
 
 - GA4 `gtag.js` carga en GitHub Pages.
 - `game_start` aparece una vez por partida iniciada.
+- `difficulty_selected` registra el nivel elegido y si es una partida repetida en la sesión.
 - `game_end` aparece solo al terminar la partida.
+- `game_abandon` aparece si el usuario sale o reinicia antes de terminar, con la ronda actual.
 - `round_start` y `round_end` aparecen 16 veces en una partida completa.
+- `game_end` incluye posición final y puntuación final por asiento, sin enviar nombres.
 - No se registran cartas exactas ni nombres libres.
 - Los eventos no rompen el juego si GA4 está bloqueado por adblocker.
 - No hay eventos duplicados al abrir/cerrar modales o reiniciar partida.

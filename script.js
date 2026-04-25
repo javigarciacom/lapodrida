@@ -47,6 +47,9 @@ let scoreData = [];
 let playedCardsThisRound = [];
 let turnToken = 0;
 let gameStartTime = null;
+let gameInProgress = false;
+let gameCompleted = false;
+let sessionGameCount = 0;
 
 /***********************
  * ANALYTICS (GA4 gtag.js)
@@ -58,6 +61,57 @@ function trackEvent(event, data) {
   } catch (e) {
     // No romper el juego si GA4 falla o está bloqueado por adblocker
   }
+}
+
+function readSessionGameCount() {
+  try {
+    return parseInt(sessionStorage.getItem("lp_session_game_count") || "0", 10) || 0;
+  } catch (e) {
+    return sessionGameCount || 0;
+  }
+}
+
+function writeSessionGameCount(value) {
+  sessionGameCount = value;
+  try {
+    sessionStorage.setItem("lp_session_game_count", String(value));
+  } catch (e) {
+    // sessionStorage puede fallar en algunos modos privados; el contador en memoria basta.
+  }
+}
+
+function getPlayerRankMap() {
+  const sorted = players.slice().sort((a, b) => b.score - a.score);
+  const ranks = {};
+  sorted.forEach((p, i) => {
+    const tiedWithPrev = i > 0 && sorted[i - 1].score === p.score;
+    ranks[p.position] = tiedWithPrev ? ranks[sorted[i - 1].position] : i + 1;
+  });
+  return ranks;
+}
+
+function getGameProgressPayload(reason) {
+  const human = players.find(p => p.type === "human");
+  return {
+    reason,
+    difficulty,
+    game_sequence: sessionGameCount,
+    is_repeat_game: sessionGameCount > 1,
+    current_round_index: currentRoundIndex + 1,
+    rounds_completed: scoreData.length,
+    hand_size: handSize,
+    phase: currentPhase,
+    human_total_score: human ? human.score : null,
+    duration_ms: gameStartTime ? (Date.now() - gameStartTime) : null
+  };
+}
+
+function trackGameAbandon(reason) {
+  if (!gameInProgress || gameCompleted) return;
+  trackEvent("game_abandon", {
+    ...getGameProgressPayload(reason),
+    transport_type: "beacon"
+  });
 }
 
 /***********************
@@ -1357,6 +1411,8 @@ function endRound() {
     round_index: currentRoundIndex + 1,
     hand_size: handSize,
     difficulty,
+    game_sequence: sessionGameCount,
+    is_repeat_game: sessionGameCount > 1,
     human_bid: human.bid,
     human_tricks: human.tricks,
     human_round_points: humanPts,
@@ -1371,11 +1427,9 @@ function endRound() {
     setTimeout(startRound, 2500);
   } else {
     // Partida completada: calcular ranking y métricas agregadas
-    const sorted = players.slice().sort((a, b) => b.score - a.score);
-    let humanRank = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      if (sorted[i].id === human.id) { humanRank = i + 1; break; }
-    }
+    gameCompleted = true;
+    gameInProgress = false;
+    const ranks = getPlayerRankMap();
     const hits = scoreData.reduce((acc, r) => {
       const pIdx = players.indexOf(human);
       return acc + (r.results[pIdx].roundPoints > 0 ? 1 : 0);
@@ -1383,8 +1437,18 @@ function endRound() {
     const hitRate = scoreData.length > 0 ? hits / scoreData.length : 0;
     trackEvent("game_end", {
       difficulty,
+      game_sequence: sessionGameCount,
+      is_repeat_game: sessionGameCount > 1,
       final_score_human: human.score,
-      human_rank: humanRank,
+      final_score_north: players.find(p => p.position === "north").score,
+      final_score_east: players.find(p => p.position === "east").score,
+      final_score_south: players.find(p => p.position === "south").score,
+      final_score_west: players.find(p => p.position === "west").score,
+      final_rank_north: ranks.north,
+      final_rank_east: ranks.east,
+      final_rank_south: ranks.south,
+      final_rank_west: ranks.west,
+      human_rank: ranks[human.position],
       rounds_completed: scoreData.length,
       duration_ms: gameStartTime ? (Date.now() - gameStartTime) : null,
       hit_rate_human: Number(hitRate.toFixed(3))
@@ -1520,6 +1584,8 @@ function hideScoreboard() {
 // Difficulty modal — selecting a difficulty always starts a fresh game
 document.querySelectorAll(".dm-btn").forEach(btn => {
   btn.addEventListener("click", () => {
+    const previousGameWasActive = gameInProgress && !gameCompleted;
+    if (previousGameWasActive) trackGameAbandon("new_game");
     difficulty = btn.dataset.diff;
     diffCfg = DIFF_CONFIG[difficulty];
     const modal = document.getElementById("difficulty-modal");
@@ -1527,11 +1593,23 @@ document.querySelectorAll(".dm-btn").forEach(btn => {
     modal.classList.add("hidden");
     modal.classList.remove("dismissible");
     document.getElementById("game").style.display = "block";
+    const nextGameSequence = readSessionGameCount() + 1;
+    writeSessionGameCount(nextGameSequence);
+    trackEvent("difficulty_selected", {
+      difficulty,
+      source,
+      game_sequence: sessionGameCount,
+      is_repeat_game: sessionGameCount > 1,
+      previous_game_abandoned: previousGameWasActive
+    });
     trackEvent("game_start", {
       difficulty,
       deck_variant: deckVariant,
       game_direction: gameDirection,
-      source
+      source,
+      game_sequence: sessionGameCount,
+      is_repeat_game: sessionGameCount > 1,
+      previous_game_abandoned: previousGameWasActive
     });
     initGame();
   });
@@ -1560,6 +1638,10 @@ document.getElementById("scoreboard-close").addEventListener("click", hideScoreb
 // Sim log close (log kept but inaccessible — no toggle button)
 document.getElementById("sim-log-close").addEventListener("click", () => {
   document.getElementById("sim-log").classList.remove("show");
+});
+
+window.addEventListener("pagehide", () => {
+  trackGameAbandon("pagehide");
 });
 
 /***********************
@@ -1661,6 +1743,8 @@ function initGame() {
   players.forEach(p => p.score = 0);
   scoreData = [];
   gameStartTime = Date.now();
+  gameInProgress = true;
+  gameCompleted = false;
   document.getElementById("sim-log-body").innerHTML = "";
   assignAINames();
   startRound();
@@ -1704,6 +1788,8 @@ function startRound() {
     round_index: currentRoundIndex + 1,
     hand_size: handSize,
     difficulty,
+    game_sequence: sessionGameCount,
+    is_repeat_game: sessionGameCount > 1,
     dealer_position: players.find(p => p.id === dealer).position,
     trump_suit: trump.suit
   });
